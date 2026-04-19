@@ -25,6 +25,7 @@ The current repository serves three purposes:
 ├── bbo/
 │   ├── __init__.py
 │   ├── algorithms/
+│   │   ├── model_based/
 │   │   ├── registry.py
 │   │   └── traditional/
 │   ├── core/
@@ -55,6 +56,8 @@ Reusable benchmark abstractions:
 Algorithm implementations are grouped by family.
 Current family:
 
+- `bbo/algorithms/model_based/`
+  - `optuna_tpe.py`
 - `bbo/algorithms/traditional/`
   - `random_search.py`
   - `pycma.py`
@@ -93,6 +96,18 @@ Optional interoperability helpers for ConfigSpace can be installed with:
 uv sync --extra dev --extra interop
 ```
 
+Optuna TPE is kept optional so the base install stays lightweight:
+
+```bash
+uv sync --extra dev --extra optuna
+```
+
+Scientific smoke tests for `her_demo`, `oer_demo`, and `molecule_qed_demo` additionally require:
+
+```bash
+uv sync --extra dev --extra optuna --extra bo-tutorial
+```
+
 ## Running the demos
 
 ### Full comparison suite
@@ -119,6 +134,12 @@ uv run python examples/run_random_search_demo.py
 uv run python examples/run_pycma_demo.py
 ```
 
+### Optuna TPE baseline
+
+```bash
+uv run python examples/run_optuna_tpe_demo.py
+```
+
 ### Direct CLI example
 
 ```bash
@@ -129,6 +150,17 @@ uv run python -m bbo.run \
   --sigma-fraction 0.18 \
   --popsize 6
 ```
+
+Optuna TPE uses the public algorithm name `optuna_tpe` and supports mixed/categorical search spaces:
+
+```bash
+uv run python -m bbo.run \
+  --algorithm optuna_tpe \
+  --task oer_demo \
+  --max-evaluations 6
+```
+
+`suite` remains a traditional-only comparison between `random_search` and `pycma`; it does not include `optuna_tpe`.
 
 ## Outputs
 
@@ -196,6 +228,15 @@ Related documentation:
 uv run python -m compileall -q bbo examples tests
 uv run pytest
 uv run python -m bbo.run --algorithm suite --task branin_demo --results-root artifacts/final_demo
+```
+
+Optuna smoke examples:
+
+```bash
+uv run python -m bbo.run --algorithm optuna_tpe --task branin_demo --max-evaluations 6 --results-root artifacts/optuna_tpe_smoke
+uv run python -m bbo.run --algorithm optuna_tpe --task her_demo --max-evaluations 6 --results-root artifacts/optuna_tpe_smoke
+uv run python -m bbo.run --algorithm optuna_tpe --task oer_demo --max-evaluations 6 --results-root artifacts/optuna_tpe_smoke
+uv run python -m bbo.run --algorithm optuna_tpe --task molecule_qed_demo --max-evaluations 6 --results-root artifacts/optuna_tpe_smoke
 ```
 
 ## Current reference benchmarks

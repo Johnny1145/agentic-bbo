@@ -230,7 +230,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--algorithm",
         default="suite",
-        choices=["suite", *sorted({name for name in ALGORITHM_REGISTRY if name in {"random_search", "pycma"}})],
+        choices=["suite", *sorted(ALGORITHM_REGISTRY)],
         help="Which demo to run. `suite` runs both algorithms and a comparison plot.",
     )
     parser.add_argument("--seed", type=int, default=7)

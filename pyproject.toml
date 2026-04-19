@@ -19,6 +19,9 @@ dependencies = [
 dev = [
   "pytest>=8.3.0",
 ]
+optuna = [
+  "optuna>=4.0",
+]
 bo-tutorial = [
   "openpyxl>=3.1",
   "pandas>=1.0.1",
