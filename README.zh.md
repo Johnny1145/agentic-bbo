@@ -25,6 +25,7 @@
 ├── bbo/
 │   ├── __init__.py
 │   ├── algorithms/
+│   │   ├── model_based/
 │   │   ├── registry.py
 │   │   └── traditional/
 │   ├── core/
@@ -55,6 +56,8 @@
 算法实现按家族组织。
 当前家族为：
 
+- `bbo/algorithms/model_based/`
+  - `optuna_tpe.py`
 - `bbo/algorithms/traditional/`
   - `random_search.py`
   - `pycma.py`
@@ -93,6 +96,18 @@ uv sync --extra dev
 uv sync --extra dev --extra interop
 ```
 
+如果需要使用 Optuna TPE，可按 optional extra 安装：
+
+```bash
+uv sync --extra dev --extra optuna
+```
+
+如果还要跑 `her_demo`、`oer_demo`、`molecule_qed_demo` 这些 scientific smoke，请再加上：
+
+```bash
+uv sync --extra dev --extra optuna --extra bo-tutorial
+```
+
 ## 运行 demo
 
 ### 完整对比 suite
@@ -119,6 +134,12 @@ uv run python examples/run_random_search_demo.py
 uv run python examples/run_pycma_demo.py
 ```
 
+### Optuna TPE baseline
+
+```bash
+uv run python examples/run_optuna_tpe_demo.py
+```
+
 ### 直接使用 CLI
 
 ```bash
@@ -129,6 +150,17 @@ uv run python -m bbo.run \
   --sigma-fraction 0.18 \
   --popsize 6
 ```
+
+Optuna TPE 的公开算法名是 `optuna_tpe`，并且支持 mixed/categorical search space：
+
+```bash
+uv run python -m bbo.run \
+  --algorithm optuna_tpe \
+  --task oer_demo \
+  --max-evaluations 6
+```
+
+`suite` 仍然只包含传统算法 `random_search` 与 `pycma`，不会把 `optuna_tpe` 混进去。
 
 ## 输出结果
 
@@ -196,6 +228,15 @@ history.md
 uv run python -m compileall -q bbo examples tests
 uv run pytest
 uv run python -m bbo.run --algorithm suite --task branin_demo --results-root artifacts/final_demo
+```
+
+Optuna smoke 示例：
+
+```bash
+uv run python -m bbo.run --algorithm optuna_tpe --task branin_demo --max-evaluations 6 --results-root artifacts/optuna_tpe_smoke
+uv run python -m bbo.run --algorithm optuna_tpe --task her_demo --max-evaluations 6 --results-root artifacts/optuna_tpe_smoke
+uv run python -m bbo.run --algorithm optuna_tpe --task oer_demo --max-evaluations 6 --results-root artifacts/optuna_tpe_smoke
+uv run python -m bbo.run --algorithm optuna_tpe --task molecule_qed_demo --max-evaluations 6 --results-root artifacts/optuna_tpe_smoke
 ```
 
 ## 当前参考 benchmark

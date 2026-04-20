@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from ..core.algo import Algorithm
+from .model_based import OptunaTpeAlgorithm
 from .traditional import PyCmaAlgorithm, RandomSearchAlgorithm
 
 
@@ -41,6 +42,11 @@ ALGORITHM_REGISTRY: dict[str, AlgorithmSpec] = {
         description="Alias for pycma.",
         family="traditional",
         numeric_only=True,
+    ),
+    "optuna_tpe": AlgorithmSpec(
+        factory=OptunaTpeAlgorithm,
+        description="Optuna TPE via the optional `optuna` package.",
+        family="model_based",
     ),
 }
 

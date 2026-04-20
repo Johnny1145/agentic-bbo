@@ -19,6 +19,25 @@ dependencies = [
 dev = [
   "pytest>=8.3.0",
 ]
+optuna = [
+  "optuna>=4.0",
+]
+bo-tutorial = [
+  "openpyxl>=3.1",
+  "pandas>=1.0.1",
+  "rdkit",
+  "scikit-learn>=0.22",
+  "scipy>=1.1",
+  "tqdm",
+]
+bo-tutorial-full = [
+  "catboost>=0.24.4",
+  "disjoint-set",
+  "gpytorch>=1.4.0",
+  "hebo",
+  "pymoo==0.6.1.6",
+  "torch>=1.9.0",
+]
 interop = [
   "ConfigSpace>=1.2.0",
 ]
