@@ -20,6 +20,8 @@ __all__ = [
     "BBOPlaceTask",
     "BBOPlaceTaskConfig",
     "HTTP_SURROGATE_TASK_IDS",
+    "LlamboAlgorithm",
+    "OproAlgorithm",
     "PyCmaAlgorithm",
     "RandomSearchAlgorithm",
     "SCIENTIFIC_TASK_REGISTRY",
@@ -52,6 +54,8 @@ def __getattr__(name: str):
     if name in {
         "ALGORITHM_REGISTRY",
         "AlgorithmSpec",
+        "LlamboAlgorithm",
+        "OproAlgorithm",
         "PyCmaAlgorithm",
         "RandomSearchAlgorithm",
         "algorithms_by_family",
