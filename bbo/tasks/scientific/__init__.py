@@ -11,6 +11,12 @@ from .guacamol import (
 from .hea import HEA_COMPONENTS, HEA_DESIGN_FEATURES, HEA_TASK_NAME, HeaTask, HeaTaskConfig, create_hea_task
 from .her import HER_FEATURES, HER_TASK_NAME, HerTask, HerTaskConfig, create_her_task
 from .molecule import MOLECULE_TASK_NAME, MoleculeQEDTask, MoleculeTaskConfig, create_molecule_qed_task
+from .molecule_similarity import (
+    MOLECULE_SIMILARITY_TASK_NAME,
+    MoleculeSimilarityTask,
+    MoleculeSimilarityTaskConfig,
+    create_molecule_similarity_task,
+)
 from .oer import OER_TASK_NAME, OerTask, OerTaskConfig, create_oer_task
 from .qed_selfies import QED_SELFIES_TASK_NAME, QedSelfiesTask, QedSelfiesTaskConfig, create_qed_selfies_task
 from .registry import SCIENTIFIC_TASK_REGISTRY, create_scientific_task
@@ -29,6 +35,9 @@ __all__ = [
     "HER_FEATURES",
     "HER_TASK_NAME",
     "MOLECULE_TASK_NAME",
+    "MOLECULE_SIMILARITY_TASK_NAME",
+    "MoleculeSimilarityTask",
+    "MoleculeSimilarityTaskConfig",
     "MoleculeQEDTask",
     "MoleculeTaskConfig",
     "OER_TASK_NAME",
@@ -49,6 +58,7 @@ __all__ = [
     "create_guacamol_qed_task",
     "create_hea_task",
     "create_her_task",
+    "create_molecule_similarity_task",
     "create_molecule_qed_task",
     "create_oer_task",
     "create_qed_selfies_task",
