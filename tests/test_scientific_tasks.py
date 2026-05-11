@@ -11,6 +11,13 @@ from bbo.tasks import (
     ALL_TASK_NAMES,
     BH_TASK_NAME,
     GUACAMOL_QED_TASK_NAME,
+    GUACAMOL_ARIPIPRAZOLE_SIMILARITY_TASK_NAME,
+    GUACAMOL_CELECOXIB_REDISCOVERY_TASK_NAME,
+    GUACAMOL_FEXOFENADINE_MPO_TASK_NAME,
+    GUACAMOL_MEDIAN1_TASK_NAME,
+    GUACAMOL_QED_SELFIES_TASK_NAME,
+    GUACAMOL_SELFIES_TASK_NAMES,
+    GUACAMOL_TROGLITAZONE_REDISCOVERY_TASK_NAME,
     HEA_TASK_NAME,
     HER_FEATURES,
     HER_TASK_NAME,
@@ -19,6 +26,7 @@ from bbo.tasks import (
     OER_TASK_NAME,
     QED_SELFIES_TASK_NAME,
     create_bh_task,
+    create_guacamol_selfies_task,
     create_guacamol_qed_task,
     create_hea_task,
     create_her_task,
@@ -53,6 +61,12 @@ def test_scientific_registry_contains_all_tasks() -> None:
     assert OER_TASK_NAME in ALL_TASK_NAMES
     assert BH_TASK_NAME in ALL_TASK_NAMES
     assert GUACAMOL_QED_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_QED_SELFIES_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_CELECOXIB_REDISCOVERY_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_TROGLITAZONE_REDISCOVERY_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_ARIPIPRAZOLE_SIMILARITY_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_FEXOFENADINE_MPO_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_MEDIAN1_TASK_NAME in ALL_TASK_NAMES
     assert MOLECULE_TASK_NAME in ALL_TASK_NAMES
     assert QED_SELFIES_TASK_NAME in ALL_TASK_NAMES
     assert MOLECULE_SIMILARITY_TASK_NAME in ALL_TASK_NAMES
@@ -233,6 +247,37 @@ def test_guacamol_qed_task_sanity() -> None:
     assert 0.0 <= result.metrics["guacamol_qed_score"] <= 1.0
 
 
+@pytest.mark.parametrize("task_name", GUACAMOL_SELFIES_TASK_NAMES)
+def test_guacamol_selfies_task_sanity(task_name: str, tmp_path: Path) -> None:
+    pytest.importorskip("rdkit")
+    pytest.importorskip("selfies")
+    source_root = _require_bo_tutorial_source()
+    task = create_guacamol_selfies_task(
+        task_name,
+        max_evaluations=3,
+        seed=29,
+        source_root=source_root,
+        cache_root=tmp_path / "dataset_cache",
+        max_selfies_tokens=16,
+        vocabulary_source_limit=64,
+    )
+    report = task.sanity_check()
+
+    assert report.ok
+    assert task.spec.name == task_name
+    assert task.spec.primary_objective.name.endswith("_loss")
+    assert report.metadata["source_item_count"] > 0
+    assert report.metadata["selfies_vocabulary_size"] > 0
+    assert task.spec.search_space.names()[0] == "selfies_token_00"
+
+    result = task.evaluate(TrialSuggestion(config=task.spec.search_space.defaults()))
+    assert result.success
+    assert result.metadata["valid_smiles"]
+    objective = result.objectives[task.spec.primary_objective.name]
+    assert 0.0 <= objective <= 1.0
+    assert 0.0 <= result.metrics["guacamol_score"] <= 1.0
+
+
 @pytest.mark.parametrize(
     "task_name",
     [HER_TASK_NAME, HEA_TASK_NAME, OER_TASK_NAME, BH_TASK_NAME],
@@ -377,3 +422,29 @@ def test_guacamol_qed_random_search_smoke(tmp_path: Path) -> None:
         path = Path(plot_path)
         assert path.exists()
         assert path.stat().st_size > 0
+
+
+@pytest.mark.parametrize("task_name", GUACAMOL_SELFIES_TASK_NAMES)
+def test_guacamol_selfies_random_search_smoke(task_name: str, tmp_path: Path) -> None:
+    pytest.importorskip("rdkit")
+    pytest.importorskip("selfies")
+    source_root = _require_bo_tutorial_source()
+    summary = run_single_experiment(
+        task_name=task_name,
+        algorithm_name="random_search",
+        seed=5,
+        max_evaluations=3,
+        task_kwargs={
+            "source_root": source_root,
+            "cache_root": tmp_path / "dataset_cache",
+            "max_selfies_tokens": 16,
+            "vocabulary_source_limit": 64,
+        },
+        results_root=tmp_path,
+        resume=False,
+        generate_plots=False,
+    )
+
+    assert summary["trial_count"] == 3
+    assert summary["best_primary_objective"] is not None
+    assert Path(summary["results_jsonl"]).exists()
