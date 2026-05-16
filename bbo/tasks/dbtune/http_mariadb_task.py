@@ -1,4 +1,4 @@
-"""BBO task: evaluate dbtune MariaDB knobs via the packaged evaluator service."""
+"""BBO task: evaluate dbtune MySQL 5.7 knobs via the packaged evaluator service."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ def _resolve_timeout_sec(config_timeout: float | None) -> float:
 
 @dataclass(frozen=True)
 class HttpDatabaseKnobTaskConfig:
-    """Configuration for one dbtune MariaDB evaluator task."""
+    """Configuration for one dbtune MySQL 5.7 evaluator task."""
 
     task_id: str
     base_url: str | None = None
@@ -90,7 +90,7 @@ class HttpDatabaseKnobTask(Task):
         self.config = config
         if not is_database_task_id(config.task_id):
             raise ValueError(
-                f"Unknown dbtune MariaDB task_id `{config.task_id}`. Known: {', '.join(DBTUNE_MARIADB_TASK_IDS)}"
+                f"Unknown dbtune MySQL task_id `{config.task_id}`. Known: {', '.join(DBTUNE_MARIADB_TASK_IDS)}"
             )
 
         self._task_spec: HttpDatabaseTaskSpec = by_task_id(config.task_id)
@@ -127,7 +127,7 @@ class HttpDatabaseKnobTask(Task):
                 "evaluate_path": config.evaluate_path,
                 "workload": self._task_spec.workload_key,
                 "feature_order": list(self._feature_names),
-                "problem_family": "dbtune_mariadb",
+                "problem_family": "dbtune_mysql57",
                 **config.metadata,
             },
         )
@@ -144,7 +144,7 @@ class HttpDatabaseKnobTask(Task):
             get_json(self._base_url, health_path, timeout_sec=min(10.0, self._timeout_sec))
         except RuntimeError as exc:
             raise RuntimeError(
-                f"dbtune MariaDB evaluator service not reachable at {self._base_url!r} ({exc}). "
+                f"dbtune MySQL evaluator service not reachable at {self._base_url!r} ({exc}). "
                 f"Start the Docker image from bbo/tasks/dbtune/docker_mariadb/ or set {_ENV_BASE_URL}."
             ) from exc
 

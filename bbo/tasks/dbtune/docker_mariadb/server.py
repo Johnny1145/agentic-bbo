@@ -1,19 +1,21 @@
-"""HTTP API: apply MySQL/MariaDB knobs, restart server, run sysbench, return TPS."""
+"""HTTP API: apply MySQL 5.7 knobs, restart server, run sysbench, return TPS."""
 
 from __future__ import annotations
 
 import re
 import subprocess
 import threading
+import os
 from typing import Any, Final
 
 from flask import Flask, jsonify, request
 
 # --- 配置常量（与 entrypoint 中的 root 密码一致） ---
-TUNER_CONF: Final = "/etc/mysql/mariadb.conf.d/99-tuner.cnf"
+TUNER_CONF: Final = "/etc/mysql/conf.d/99-tuner.cnf"
 MYSQL_USER = "root"
-MYSQL_PASSWORD = "123456"
-MYSQL_DB = "sbtest"
+MYSQL_PASSWORD = os.environ.get("MYSQL_ROOT_PASSWORD", "123456")
+MYSQL_DB = os.environ.get("MYSQL_DATABASE", "sbtest")
+MYSQL_SOCKET = "/var/run/mysqld/mysqld.sock"
 SYSBENCH_TABLES = 10
 SYSBENCH_TABLE_SIZE = 100_000
 SYSBENCH_TIME_SEC = 10
@@ -43,13 +45,42 @@ def _write_tuner_cnf(knobs: dict[str, str]) -> None:
         f.write(content)
 
 
-def _restart_mariadb() -> None:
+def _restart_mysql57() -> None:
     subprocess.run(
-        ["service", "mariadb", "restart"],
+        [
+            "mysqladmin",
+            "-u",
+            MYSQL_USER,
+            f"-p{MYSQL_PASSWORD}",
+            "--protocol=socket",
+            f"--socket={MYSQL_SOCKET}",
+            "shutdown",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    subprocess.run(
+        [
+            "mysqld",
+            "--daemonize",
+            "--skip-networking=0",
+            "--socket=/var/run/mysqld/mysqld.sock",
+            "--pid-file=/var/run/mysqld/mysqld.pid",
+            "--user=mysql",
+        ],
         check=True,
         capture_output=True,
         text=True,
         timeout=300,
+    )
+    subprocess.run(
+        ["mysqladmin", "-u", MYSQL_USER, f"-p{MYSQL_PASSWORD}", "ping"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
 
 
@@ -130,7 +161,7 @@ def evaluate() -> Any:
     with _eval_lock:
         try:
             _write_tuner_cnf(knobs)
-            _restart_mariadb()
+            _restart_mysql57()
             result = _run_sysbench(test_name)
             if result.returncode != 0:
                 return (

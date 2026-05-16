@@ -51,7 +51,7 @@ The image includes:
 - the `benchmark-main` dependency set
 - a self-contained `BBOPlace-miniBench` checkout under `/opt/BBOPlace-miniBench`
 - bundled BBOPlace datasets needed by the local bridge
-- MariaDB + sysbench runtime for `knob_http_mariadb_*`
+- MySQL 5.7 + sysbench runtime for legacy task IDs `knob_http_mariadb_*`
 - the standard helper scripts under `/workspace/scripts`
 
 ## Ports
@@ -61,7 +61,7 @@ When you run tasks through `scripts/run_problem.sh`, the benchmark process talks
 Ports used inside the container:
 
 - `8070`: local BBOPlace HTTP bridge
-- `8080`: local MariaDB/sysbench HTTP evaluator
+- `8080`: local MySQL 5.7/sysbench HTTP evaluator
 - `8090`: reserved for the separate surrogate evaluator image, not provided by this unified image
 
 Environment variables used by the scripts:
@@ -319,7 +319,7 @@ After this prewarm step, the validated surrogate sweep completed cleanly.
 I verified the image against:
 
 - 11 non-dbtune tasks
-- 8 MariaDB HTTP tasks
+- 8 MySQL 5.7 HTTP tasks (legacy task IDs `knob_http_mariadb_*`)
 - 8 baselines
 
 The 8 baselines were:

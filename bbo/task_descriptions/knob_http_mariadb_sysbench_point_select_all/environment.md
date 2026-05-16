@@ -4,9 +4,9 @@
 
 ```bash
 cd bbo/tasks/dbtune/docker_mariadb
-docker build -t agentbbo-http-mariadb-eval:v1 .
-docker rm -f agentbbo_http_mariadb_eval 2>/dev/null
-docker run -d --name agentbbo_http_mariadb_eval -p 8080:8080 agentbbo-http-mariadb-eval:v1
+docker build -t agentbbo-http-mysql57-eval:v1 .
+docker rm -f agentbbo_http_mysql57_eval 2>/dev/null
+docker run -d --name agentbbo_http_mysql57_eval -p 8080:8080 agentbbo-http-mysql57-eval:v1
 ```
 
 After pulling changes to `server.py` (notably the `workload` field), **rebuild** the image so every task can select its sysbench test.

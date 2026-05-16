@@ -9,7 +9,7 @@ db_name="${DBTUNE_MYSQL_DB:-sbtest}"
 tables="${DBTUNE_SYSBENCH_TABLES:-10}"
 table_size="${DBTUNE_SYSBENCH_TABLE_SIZE:-100000}"
 
-mysql_cli="$(command -v mariadb || command -v mysql || true)"
+mysql_cli="$(command -v mysql || command -v mariadb || true)"
 if [[ -z "${mysql_cli}" ]]; then
   echo "mariadb/mysql client not found in PATH" >&2
   exit 1
@@ -28,8 +28,13 @@ then
   exit 1
 fi
 
-echo "1. Starting MariaDB..."
-service mariadb start
+echo "1. Starting MySQL service..."
+if command -v service >/dev/null 2>&1; then
+  service mysql start >/dev/null 2>&1 || service mariadb start
+else
+  echo "service command is unavailable; start MySQL manually before running this script." >&2
+  exit 1
+fi
 
 echo "2. Initializing database and root password..."
 "${mysql_cli}" -u root -e "CREATE DATABASE IF NOT EXISTS ${db_name};" || true

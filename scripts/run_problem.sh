@@ -42,33 +42,33 @@ wait_http() {
 }
 
 start_mariadb_local_service() {
-  if ! command -v mariadb >/dev/null 2>&1 && ! command -v mysql >/dev/null 2>&1; then
-    echo "Local MariaDB evaluator requires mariadb/mysql client binaries." >&2
+  if ! command -v mysql >/dev/null 2>&1 && ! command -v mariadb >/dev/null 2>&1; then
+    echo "Local MySQL evaluator requires mysql/mariadb client binaries." >&2
     return 1
   fi
   if ! command -v sysbench >/dev/null 2>&1; then
-    echo "Local MariaDB evaluator requires sysbench." >&2
+    echo "Local MySQL evaluator requires sysbench." >&2
     return 1
   fi
   if ! uv run python - <<'PY' >/dev/null 2>&1
 import flask
 PY
   then
-    echo "Local MariaDB evaluator requires Flask in the uv environment." >&2
+    echo "Local MySQL evaluator requires Flask in the uv environment." >&2
     return 1
   fi
 
   local base_url="${AGENTBBO_HTTP_EVAL_BASE_URL:-http://127.0.0.1:8080}"
   local log_dir="${BBO_RUN_LOG_DIR:-artifacts/service_logs}"
   mkdir -p "$log_dir"
-  local log_path="$log_dir/mariadb_local_eval.log"
+  local log_path="$log_dir/mysql57_local_eval.log"
 
   bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/start_mariadb_eval.sh" \
     >"$log_path" 2>&1 &
   DBTUNE_MARIADB_PID=$!
 
   if ! wait_http "${base_url}/health" 120 1.0; then
-    echo "failed to start local MariaDB evaluator; see ${log_path}" >&2
+    echo "failed to start local MySQL evaluator; see ${log_path}" >&2
     return 1
   fi
   trap 'if [[ -n "${DBTUNE_MARIADB_PID:-}" ]]; then kill "${DBTUNE_MARIADB_PID}" >/dev/null 2>&1 || true; fi' EXIT

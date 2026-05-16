@@ -10,7 +10,7 @@ uv run python examples/run_all_registered_tasks.py
 并满足：
 
 - **Python 侧**：`optuna_tpe` 及**全部已注册**任务（含 scientific、HTTP、BBOPlace）的依赖已就绪。  
-- **网络侧**：`127.0.0.1:8070`（BBOPlace）、`8080`（MariaDB 评估器）、`8090`（Surrogate 评估器）均有服务监听，批跑脚本的**默认 auto 探测**会把 `knob_http_*` 与 BBOPlace 排进计划（与 `examples/run_all_registered_tasks.md` 描述一致）。  
+- **网络侧**：`127.0.0.1:8070`（BBOPlace）、`8080`（MySQL 5.7 评估器）、`8090`（Surrogate 评估器）均有服务监听，批跑脚本的**默认 auto 探测**会把 `knob_http_*` 与 BBOPlace 排进计划（与 `examples/run_all_registered_tasks.md` 描述一致）。  
 
 若你**故意**只跑本地、不依赖 HTTP，请改用 `--skip-http --skip-bboplace` 等；**不在**本文“完整先决”范围内。
 
@@ -30,7 +30,7 @@ uv run python examples/run_all_registered_tasks.py
 | 项目 | 建议 |
 |------|------|
 | OS | 常见 **x86_64 Linux**（如 Ubuntu 22.04+）。macOS/Windows 需自行对应 Docker Desktop。 |
-| CPU / 内存 | 全量批跑会启动真实 **MariaDB + sysbench**，单评估可能较慢；**≥8 GB RAM** 更稳。 |
+| CPU / 内存 | 全量批跑会启动真实 **MySQL 5.7 + sysbench**，单评估可能较慢；**≥8 GB RAM** 更稳。 |
 | 磁盘 | 克隆仓库、Docker 镜像、`.joblib` 资产、结果目录 **`Agentbbo/runs/`**；**≥20 GB 空闲** 更从容。 |
 | 网络 | 需能 **`git clone`**、**`docker pull`**（BBOPlace 公共镜像）、以及（Surrogate 资产）**访问 Google Drive 分享链接**或事先拷贝文件。 |
 | GPU | BBOPlace 等镜像在多数 smoke 下 **CPU 即可**；需要时再按各镜像说明加 `--gpus all`。 |
@@ -66,7 +66,7 @@ docker version
 
 ### 2.3 构建自定义镜像的依赖
 
-构建 **MariaDB / Surrogate** 镜像时，部分 Dockerfile 会安装系统包。若 `docker build` 报缺 `gcc` 等，在 Ubuntu 上可：
+构建 **MySQL 5.7 / Surrogate** 镜像时，部分 Dockerfile 会安装系统包。若 `docker build` 报缺 `gcc` 等，在 Ubuntu 上可：
 
 ```bash
 sudo apt-get install -y build-essential
@@ -114,7 +114,7 @@ uv sync --extra dev --extra task-host
 
 - **`task-host`**：把 `optuna`、scientific task 依赖、ConfigSpace 互操作依赖和常用本地数据处理包合并成一套宿主环境。  
 - **`dev`**：pytest 等（便于自检）。  
-- **隔离策略**：不兼容的 evaluator runtime **不进宿主 Python 3.11 环境**。MariaDB/sysbench 继续放在自己的 Docker 镜像里，旧版 sklearn surrogate 继续放在 Python 3.7 sidecar 里。
+- **隔离策略**：不兼容的 evaluator runtime **不进宿主 Python 3.11 环境**。MySQL 5.7/sysbench 继续放在自己的 Docker 镜像里，旧版 sklearn surrogate 继续放在 Python 3.7 sidecar 里。
 
 如果你不想使用 `task-host` 这个聚合 extra，近似等价的旧命令仍然是：
 
@@ -135,7 +135,7 @@ uv run python -c "import optuna; from rdkit import Chem; from bbo.tasks import A
 | 宿主机端口 | 用途 | 典型容器 / 说明 |
 |------------|------|------------------|
 | **8070** | BBOPlace 评估服务（**映射到容器 8080**） | 公共镜像 `gaozhixuan/bboplace-bench` |
-| **8080** | MariaDB + sysbench HTTP 评估 | **本地 `docker build`** 见 §7 |
+| **8080** | MySQL 5.7 + sysbench HTTP 评估 | **本地 `docker build`** 见 §7 |
 | **8090** | Sklearn 代理 HTTP 评估 | **本地 `docker build`** 见 §8 |
 
 默认**环境变量**（与代码、database.md 一致，一般**不必**另设，除非改端口/主机名）：
@@ -159,7 +159,7 @@ export AGENTBBO_HTTP_SURROGATE_TIMEOUT_SEC=300
 docker compose -f docker-compose.task-services.yml up -d --build
 ```
 
-这个 compose 文件遵循与代码相同的端口约定：BBOPlace `8070`、MariaDB `8080`、Surrogate `8090`。
+这个 compose 文件遵循与代码相同的端口约定：BBOPlace `8070`、MySQL 5.7 `8080`、Surrogate `8090`。
 
 ---
 
@@ -176,15 +176,15 @@ docker run -d --name agentbbo_bboplace -p 8070:8080 gaozhixuan/bboplace-bench
 
 ---
 
-## 7. 启动二：MariaDB HTTP 评估器（`8080`）
+## 7. 启动二：MySQL 5.7 HTTP 评估器（`8080`）
 
 在 **`Agentbbo/bbo/tasks/dbtune/docker_mariadb/`** 下构建，并**映射 8080:8080**（与 `database.md` 一致）：
 
 ```bash
 cd Agentbbo/bbo/tasks/dbtune/docker_mariadb
-docker build -t agentbbo-http-mariadb-eval:v1 .
-docker rm -f agentbbo_http_mariadb_eval 2>/dev/null
-docker run -d --name agentbbo_http_mariadb_eval -p 8080:8080 agentbbo-http-mariadb-eval:v1
+docker build -t agentbbo-http-mysql57-eval:v1 .
+docker rm -f agentbbo_http_mysql57_eval 2>/dev/null
+docker run -d --name agentbbo_http_mysql57_eval -p 8080:8080 agentbbo-http-mysql57-eval:v1
 ```
 
 **健康检查**（应见 JSON 含 `"status":"ok"` 等）：
@@ -193,7 +193,7 @@ docker run -d --name agentbbo_http_mariadb_eval -p 8080:8080 agentbbo-http-maria
 curl -sS http://127.0.0.1:8080/health
 ```
 
-> 首次/全量 `prepare` 可能较慢，属正常；`run_all` 里 MariaDB 子任务**耗时可明显长于**纯合成任务。  
+> 首次/全量 `prepare` 可能较慢，属正常；`run_all` 里 MySQL 5.7 子任务**耗时可明显长于**纯合成任务。  
 
 ---
 
@@ -281,7 +281,7 @@ uv run python examples/run_all_registered_tasks.py
 
 ### 10.1 无法一次跑完时
 
-- 全量子实验**非常耗时**（尤其 MariaDB 真机压测、高维 surrogate）。可先用 **`--list` / `--dry-run** 控制预期，并调小 **`--max-evaluations` / `--bboplace-max-evaluations`** 做烟测。  
+- 全量子实验**非常耗时**（尤其 MySQL 5.7 真机压测、高维 surrogate）。可先用 **`--list` / `--dry-run** 控制预期，并调小 **`--max-evaluations` / `--bboplace-max-evaluations`** 做烟测。  
 - 仅缺某一类服务时：用 **`--skip-http`** 或 **`--skip-bboplace`**，或修复端口/容器后再跑。
 
 ---
@@ -293,7 +293,7 @@ uv run python examples/run_all_registered_tasks.py
 | 8070/8080/8090 探测失败 | 对应容器未起、端口被占用、或防火墙拦 **本机回环**（少见）。`docker ps` 检查 `-p` 映射。 |
 | `import optuna` 失败 | 未 `uv sync --extra optuna`。 |
 | `rdkit` / molecule 相关失败 | 未加 **`--extra bo-tutorial`**。 |
-| MariaDB 评估超时 | 调大 `AGENTBBO_HTTP_EVAL_TIMEOUT_SEC`；或减轻负载（`--max-evaluations`、先用 5-knob 任务等）。 |
+| MySQL 5.7 评估超时 | 调大 `AGENTBBO_HTTP_EVAL_TIMEOUT_SEC`；或减轻负载（`--max-evaluations`、先用 5-knob 任务等）。 |
 | Surrogate 503 / 反序列化错误 | 缺/坏 `.joblib`；按 `assets/README.md` 重下；或对齐 `docker_surrogate` 的 sklearn 版本并重建镜像。 |
 | BBOPlace 连接失败 | 8070 未映射；`BBOPLACE_BASE_URL` 是否指向**宿主机 8070**（不是 8080）。 |
 | 权限 / `denied` | 用户未进 `docker` 组，或应使用 `sudo docker`（不推荐长期使用）。 |
@@ -306,7 +306,7 @@ uv run python examples/run_all_registered_tasks.py
 - [ ] `uv`、项目 `cd Agentbbo`  
 - [ ] `uv sync --extra dev --extra task-host`  
 - [ ] BBOPlace：`docker pull` + `run -d -p 8070:8080`  
-- [ ] MariaDB 评估：`docker_mariadb` 下 build + `run -d -p 8080:8080`，`curl /health`  
+- [ ] MySQL 5.7 评估：`docker_mariadb` 下 build + `run -d -p 8080:8080`，`curl /health`  
 - [ ] Surrogate 评估：`dbtune` 下 build（assets 已就位）+ `run -d -p 8090:8090`，`curl /health`  
 - [ ] `uv run python examples/run_all_registered_tasks.py --list` 探针为三路 ok  
 - [ ] 正式：`uv run python examples/run_all_registered_tasks.py`  
@@ -319,11 +319,11 @@ uv run python examples/run_all_registered_tasks.py
 |------|------|
 | `examples/run_all_registered_tasks.py` | 批跑入口 |
 | `examples/run_all_registered_tasks.md` | 脚本设计说明 |
-| `database.md` | HTTP 任务与端口、MariaDB / Surrogate / BBOPlace 对照 |
+| `database.md` | HTTP 任务与端口、MySQL 5.7 / Surrogate / BBOPlace 对照 |
 | `README.md` / `README.zh.md` | 安装与 `task-host` / extras 说明 |
 | `docker-compose.task-services.yml` | 三个任务 sidecar 的统一启动文件 |
 | `bbo/task_descriptions/bboplace_bench/environment.md` | BBOPlace 环境与 `BBOPLACE_BASE_URL` |
-| `bbo/tasks/dbtune/docker_mariadb/` | MariaDB 镜像与构建说明 |
+| `bbo/tasks/dbtune/docker_mariadb/` | MySQL 5.7 镜像与构建说明（目录名保留历史命名） |
 | `bbo/tasks/dbtune/docker_surrogate/README.md` | Surrogate 镜像与 API |
 | `bbo/tasks/dbtune/assets/README.md` | `*.joblib` 下载与路径 |
 

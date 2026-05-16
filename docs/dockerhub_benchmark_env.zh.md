@@ -51,7 +51,7 @@ bash scripts/install_dockerhub_benchmark_env.sh
 - `benchmark-main` 依赖集合
 - `/opt/BBOPlace-miniBench` 下自带的 `BBOPlace-miniBench`
 - 本地 BBOPlace bridge 所需的数据
-- `knob_http_mariadb_*` 所需的 MariaDB + sysbench 运行时
+- `knob_http_mariadb_*`（历史 task_id）所需的 MySQL 5.7 + sysbench 运行时
 - `/workspace/scripts` 下的统一运行脚本
 
 ## 端口细节
@@ -61,7 +61,7 @@ bash scripts/install_dockerhub_benchmark_env.sh
 容器内部用到的端口：
 
 - `8070`：BBOPlace 本地 HTTP bridge
-- `8080`：MariaDB/sysbench HTTP evaluator
+- `8080`：MySQL 5.7/sysbench HTTP evaluator
 - `8090`：给 surrogate evaluator 预留，但这个统一镜像里**没有**提供
 
 脚本默认使用的环境变量：
@@ -208,7 +208,7 @@ bash scripts/run_problem.sh knob_http_mariadb_sysbench_read_only_5 random_search
   - 这个镜像不支持
   - 仍然需要单独的 Python 3.7 surrogate 容器
 
-仓库里已经有一个 MariaDB 8 任务批跑脚本：
+仓库里已经有一个 MySQL 5.7 任务批跑脚本（脚本名保留历史命名）：
 
 ```bash
 bash scripts/run_mariadb_baselines.sh --max-evaluations 1 --no-plots --results-root /workspace/runs/mariadb_batch
@@ -315,7 +315,7 @@ docker run --rm --network host \
 我这次实际验证的是：
 
 - 11 个 non-dbtune 任务
-- 8 个 MariaDB HTTP 任务
+- 8 个 MySQL 5.7 HTTP 任务（task_id 仍是 `knob_http_mariadb_*`）
 - 8 个 baseline
 
 这 8 个 baseline 是：

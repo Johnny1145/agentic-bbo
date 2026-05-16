@@ -17,7 +17,7 @@
 1. **参数解析**：算法、随机种子、各任务 `max_evaluations`、是否作图、是否写汇总表等。
 2. **端口探测**（`probe_evaluator_ports`）：对 `--http-host`（默认 `127.0.0.1`）做 TCP 连接测试：
    - **8070**：BBOPlace evaluator（宿主机端口；容器内通常为 8080）。
-   - **8080**：MariaDB HTTP 评估器（`knob_http_mariadb_sysbench_*`）。
+   - **8080**：MySQL 5.7 HTTP 评估器（兼容历史任务 ID：`knob_http_mariadb_sysbench_*`）。
    - **8090**：Surrogate HTTP 评估器（`knob_http_surrogate_*`）。
 3. **任务列表**（`_non_bboplace_tasks`）：
    - 始终包含非 HTTP 的注册任务（如 `branin_demo`、`her_demo` 等）。

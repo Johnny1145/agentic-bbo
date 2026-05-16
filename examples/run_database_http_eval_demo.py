@@ -1,9 +1,9 @@
-"""Run optimizers on dbtune MariaDB/sysbench tasks (Docker evaluator).
+"""Run optimizers on dbtune MySQL 5.7/sysbench tasks (Docker evaluator).
 
 Tasks are defined under ``bbo/tasks/dbtune/`` and registered in ``bbo.tasks.registry``.
 This script calls ``create_dbtune_mariadb_task`` directly (same shape as ``bbo.run.run_single_experiment``).
 
-Prerequisite: start the API from ``bbo/tasks/dbtune/docker_mariadb/`` (see each task's ``environment.md``).
+Prerequisite: start the API from ``bbo/tasks/dbtune/docker_mariadb/`` (MySQL 5.7 image; see each task's ``environment.md``).
 """
 
 from __future__ import annotations
@@ -132,13 +132,13 @@ run_database_http_experiment = run_dbtune_mariadb_experiment
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="dbtune MariaDB evaluator demo (MariaDB/sysbench TPS via Docker API)."
+        description="dbtune MySQL 5.7 evaluator demo (MySQL/sysbench TPS via Docker API)."
     )
     parser.add_argument(
         "--task",
         default=_DEFAULT_TASK,
         choices=sorted(DBTUNE_MARIADB_TASK_IDS),
-        help="One of the eight dbtune MariaDB task ids (default: read/write, 5 knobs).",
+        help="One of the eight dbtune MySQL task ids (default: read/write, 5 knobs).",
     )
     parser.add_argument(
         "--algorithm",
