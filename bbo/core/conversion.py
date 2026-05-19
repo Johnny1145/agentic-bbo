@@ -8,7 +8,7 @@ from typing import Any, Iterable
 
 import numpy as np
 
-from .space import CategoricalParam, FloatParam, IntParam, ParameterSpec, SearchSpace
+from .space import CategoricalParam, FloatParam, IntParam, ParameterSpec, SearchSpace, StringParam
 
 
 @dataclass(frozen=True)
@@ -95,6 +95,10 @@ class OneHotCategoricalConverter(ContinuousSearchSpaceConverter):
                 for choice in param.choices:
                     feature_specs.append(ContinuousFeatureSpec(name=f"{param.name}::{choice}", low=0.0, high=1.0))
                     offset += 1
+            elif isinstance(param, StringParam):
+                raise TypeError(
+                    f"StringParam `{param.name}` cannot be converted to a continuous feature vector."
+                )
             else:  # pragma: no cover - defensive guard against future subclasses.
                 raise TypeError(f"Unsupported parameter type `{type(param).__name__}` for one-hot conversion.")
             param_specs.append(_EncodedParameterSpec(param=param, feature_slice=slice(start, offset)))

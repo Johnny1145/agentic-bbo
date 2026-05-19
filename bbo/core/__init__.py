@@ -34,7 +34,7 @@ from .plotting import (
     ScalarBarPlotter,
     ScientificPlotter,
 )
-from .space import CategoricalParam, FloatParam, IntParam, ParameterSpec, SearchSpace
+from .space import CategoricalParam, FloatParam, IntParam, ParameterSpec, SearchSpace, StringParam
 from .task import (
     ObjectiveDirection,
     ObjectiveSpec,
@@ -84,6 +84,7 @@ __all__ = [
     "SanityCheckReport",
     "ScientificPlotter",
     "SearchSpace",
+    "StringParam",
     "Task",
     "TaskDescriptionBundle",
     "TaskDescriptionDoc",

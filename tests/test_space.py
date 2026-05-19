@@ -4,7 +4,14 @@ import random
 
 import numpy as np
 
-from bbo.core import CategoricalParam, FloatParam, IntParam, SearchSpace
+from bbo.core import (
+    CategoricalParam,
+    FloatParam,
+    IntParam,
+    SearchSpace,
+    StringParam,
+    build_continuous_converter,
+)
 
 
 def test_search_space_sampling_and_numeric_roundtrip() -> None:
@@ -31,3 +38,48 @@ def test_search_space_rejects_unknown_parameters() -> None:
         assert "Unexpected parameters" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("Expected a validation error for an unknown parameter.")
+
+
+def test_string_param_validates_and_samples_default() -> None:
+    param = StringParam(
+        "smiles",
+        default="CCO",
+        min_length=1,
+        max_length=16,
+        pattern=r"[A-Za-z0-9@+\-\[\]\(\)=#$\\/]+",
+    )
+
+    assert param.coerce("C") == "C"
+    assert param.sample(random.Random(0)) == "CCO"
+
+    try:
+        param.coerce("")
+    except ValueError as exc:
+        assert "length >=" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("Expected a validation error for a too-short string.")
+
+    try:
+        param.coerce("C C")
+    except ValueError as exc:
+        assert "pattern" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("Expected a validation error for a pattern mismatch.")
+
+
+def test_string_param_is_not_continuous_convertible() -> None:
+    space = SearchSpace([StringParam("smiles", default="C", min_length=1, max_length=32)])
+
+    try:
+        space.numeric_bounds()
+    except TypeError as exc:
+        assert "non-numeric" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("Expected StringParam to be non-numeric.")
+
+    try:
+        build_continuous_converter(space)
+    except TypeError as exc:
+        assert "cannot be converted" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("Expected StringParam to reject continuous conversion.")
