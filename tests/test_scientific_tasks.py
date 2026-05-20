@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from bbo.core import ObjectiveDirection, TrialSuggestion
+from bbo.core import ObjectiveDirection, StringParam, TrialSuggestion
 from bbo.run import run_single_experiment
 from bbo.tasks import (
     ALL_TASK_NAMES,
@@ -16,7 +16,14 @@ from bbo.tasks import (
     GUACAMOL_FEXOFENADINE_MPO_TASK_NAME,
     GUACAMOL_MEDIAN1_TASK_NAME,
     GUACAMOL_QED_SELFIES_TASK_NAME,
+    GUACAMOL_QED_SMILES_TASK_NAME,
     GUACAMOL_SELFIES_TASK_NAMES,
+    GUACAMOL_SMILES_TASK_NAMES,
+    GUACAMOL_ARIPIPRAZOLE_SIMILARITY_SMILES_TASK_NAME,
+    GUACAMOL_CELECOXIB_REDISCOVERY_SMILES_TASK_NAME,
+    GUACAMOL_FEXOFENADINE_MPO_SMILES_TASK_NAME,
+    GUACAMOL_MEDIAN1_SMILES_TASK_NAME,
+    GUACAMOL_TROGLITAZONE_REDISCOVERY_SMILES_TASK_NAME,
     GUACAMOL_TROGLITAZONE_REDISCOVERY_TASK_NAME,
     HEA_TASK_NAME,
     HER_FEATURES,
@@ -27,6 +34,7 @@ from bbo.tasks import (
     QED_SELFIES_TASK_NAME,
     create_bh_task,
     create_guacamol_selfies_task,
+    create_guacamol_smiles_task,
     create_guacamol_qed_task,
     create_hea_task,
     create_her_task,
@@ -36,6 +44,7 @@ from bbo.tasks import (
     create_qed_selfies_task,
 )
 from bbo.tasks.scientific import CACHE_ROOT_ENV, SOURCE_ROOT_ENV, VENDORED_SOURCE_ROOT
+from bbo.tasks.scientific.guacamol_selfies import CELECOXIB_SMILES
 
 
 def _require_bo_tutorial_source() -> Path:
@@ -67,6 +76,12 @@ def test_scientific_registry_contains_all_tasks() -> None:
     assert GUACAMOL_ARIPIPRAZOLE_SIMILARITY_TASK_NAME in ALL_TASK_NAMES
     assert GUACAMOL_FEXOFENADINE_MPO_TASK_NAME in ALL_TASK_NAMES
     assert GUACAMOL_MEDIAN1_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_QED_SMILES_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_CELECOXIB_REDISCOVERY_SMILES_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_TROGLITAZONE_REDISCOVERY_SMILES_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_ARIPIPRAZOLE_SIMILARITY_SMILES_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_FEXOFENADINE_MPO_SMILES_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_MEDIAN1_SMILES_TASK_NAME in ALL_TASK_NAMES
     assert MOLECULE_TASK_NAME in ALL_TASK_NAMES
     assert QED_SELFIES_TASK_NAME in ALL_TASK_NAMES
     assert MOLECULE_SIMILARITY_TASK_NAME in ALL_TASK_NAMES
@@ -276,6 +291,52 @@ def test_guacamol_selfies_task_sanity(task_name: str, tmp_path: Path) -> None:
     objective = result.objectives[task.spec.primary_objective.name]
     assert 0.0 <= objective <= 1.0
     assert 0.0 <= result.metrics["guacamol_score"] <= 1.0
+
+
+@pytest.mark.parametrize("task_name", GUACAMOL_SMILES_TASK_NAMES)
+def test_guacamol_smiles_task_sanity(task_name: str) -> None:
+    pytest.importorskip("rdkit")
+    task = create_guacamol_smiles_task(task_name, max_evaluations=3, seed=31)
+    report = task.sanity_check()
+
+    assert report.ok
+    assert task.spec.name == task_name
+    assert task.spec.search_space.names() == ["smiles"]
+    assert isinstance(task.spec.search_space["smiles"], StringParam)
+    assert report.metadata["schema_default_role"] == "schema_only_not_initial_population"
+
+    default_result = task.evaluate(TrialSuggestion(config=task.spec.search_space.defaults()))
+    assert default_result.success
+    assert default_result.metadata["valid_smiles"] is False
+    assert default_result.metrics["guacamol_score"] == 0.0
+    assert default_result.objectives[task.spec.primary_objective.name] == 1.0
+
+    valid_smiles = task.dataset_summary["target_smiles"][0] if task.dataset_summary["target_smiles"] else CELECOXIB_SMILES
+    valid_result = task.evaluate(TrialSuggestion(config=task.config_from_smiles(valid_smiles)))
+    assert valid_result.success
+    assert valid_result.metadata["valid_smiles"] is True
+    assert valid_result.metadata["canonical_smiles"]
+    assert 0.0 <= valid_result.metrics["guacamol_score"] <= 1.0
+
+    invalid_result = task.evaluate(TrialSuggestion(config={"smiles": "not a smiles"}))
+    assert invalid_result.success
+    assert invalid_result.metadata["valid_smiles"] is False
+    assert invalid_result.metrics["guacamol_score"] == 0.0
+    assert invalid_result.objectives[task.spec.primary_objective.name] == 1.0
+
+
+def test_guacamol_smiles_rejects_generic_random_search(tmp_path: Path) -> None:
+    pytest.importorskip("rdkit")
+    with pytest.raises(ValueError, match="open string parameters"):
+        run_single_experiment(
+            task_name=GUACAMOL_QED_SMILES_TASK_NAME,
+            algorithm_name="random_search",
+            seed=5,
+            max_evaluations=1,
+            results_root=tmp_path,
+            resume=False,
+            generate_plots=False,
+        )
 
 
 @pytest.mark.parametrize(

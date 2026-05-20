@@ -21,6 +21,20 @@ from .guacamol_selfies import (
     create_guacamol_qed_selfies_task,
     create_guacamol_troglitazone_rediscovery_task,
 )
+from .guacamol_smiles import (
+    GUACAMOL_ARIPIPRAZOLE_SIMILARITY_SMILES_TASK_NAME,
+    GUACAMOL_CELECOXIB_REDISCOVERY_SMILES_TASK_NAME,
+    GUACAMOL_FEXOFENADINE_MPO_SMILES_TASK_NAME,
+    GUACAMOL_MEDIAN1_SMILES_TASK_NAME,
+    GUACAMOL_QED_SMILES_TASK_NAME,
+    GUACAMOL_TROGLITAZONE_REDISCOVERY_SMILES_TASK_NAME,
+    create_guacamol_aripiprazole_similarity_smiles_task,
+    create_guacamol_celecoxib_rediscovery_smiles_task,
+    create_guacamol_fexofenadine_mpo_smiles_task,
+    create_guacamol_median1_smiles_task,
+    create_guacamol_qed_smiles_task,
+    create_guacamol_troglitazone_rediscovery_smiles_task,
+)
 from .hea import HEA_TASK_NAME, create_hea_task
 from .her import HER_TASK_NAME, create_her_task
 from .molecule import MOLECULE_TASK_NAME, create_molecule_qed_task
@@ -42,6 +56,12 @@ SCIENTIFIC_TASK_REGISTRY: dict[str, str] = {
     GUACAMOL_ARIPIPRAZOLE_SIMILARITY_TASK_NAME: "GuacaMol Aripiprazole similarity SELFIES token demo task",
     GUACAMOL_FEXOFENADINE_MPO_TASK_NAME: "GuacaMol Fexofenadine MPO SELFIES token demo task",
     GUACAMOL_MEDIAN1_TASK_NAME: "GuacaMol Median Molecules 1 SELFIES token demo task",
+    GUACAMOL_QED_SMILES_TASK_NAME: "GuacaMol QED direct-SMILES demo task",
+    GUACAMOL_CELECOXIB_REDISCOVERY_SMILES_TASK_NAME: "GuacaMol Celecoxib rediscovery direct-SMILES demo task",
+    GUACAMOL_TROGLITAZONE_REDISCOVERY_SMILES_TASK_NAME: "GuacaMol Troglitazone rediscovery direct-SMILES demo task",
+    GUACAMOL_ARIPIPRAZOLE_SIMILARITY_SMILES_TASK_NAME: "GuacaMol Aripiprazole similarity direct-SMILES demo task",
+    GUACAMOL_FEXOFENADINE_MPO_SMILES_TASK_NAME: "GuacaMol Fexofenadine MPO direct-SMILES demo task",
+    GUACAMOL_MEDIAN1_SMILES_TASK_NAME: "GuacaMol Median Molecules 1 direct-SMILES demo task",
     MOLECULE_TASK_NAME: "Molecule QED categorical demo task",
     QED_SELFIES_TASK_NAME: "QED generative SELFIES token demo task",
     MOLECULE_SIMILARITY_TASK_NAME: "Molecule ECFP4/Tanimoto similarity SELFIES token demo task",
@@ -59,6 +79,12 @@ SCIENTIFIC_TASK_FACTORIES: dict[str, ScientificTaskFactory] = {
     GUACAMOL_ARIPIPRAZOLE_SIMILARITY_TASK_NAME: create_guacamol_aripiprazole_similarity_task,
     GUACAMOL_FEXOFENADINE_MPO_TASK_NAME: create_guacamol_fexofenadine_mpo_task,
     GUACAMOL_MEDIAN1_TASK_NAME: create_guacamol_median1_task,
+    GUACAMOL_QED_SMILES_TASK_NAME: create_guacamol_qed_smiles_task,
+    GUACAMOL_CELECOXIB_REDISCOVERY_SMILES_TASK_NAME: create_guacamol_celecoxib_rediscovery_smiles_task,
+    GUACAMOL_TROGLITAZONE_REDISCOVERY_SMILES_TASK_NAME: create_guacamol_troglitazone_rediscovery_smiles_task,
+    GUACAMOL_ARIPIPRAZOLE_SIMILARITY_SMILES_TASK_NAME: create_guacamol_aripiprazole_similarity_smiles_task,
+    GUACAMOL_FEXOFENADINE_MPO_SMILES_TASK_NAME: create_guacamol_fexofenadine_mpo_smiles_task,
+    GUACAMOL_MEDIAN1_SMILES_TASK_NAME: create_guacamol_median1_smiles_task,
     MOLECULE_TASK_NAME: create_molecule_qed_task,
     QED_SELFIES_TASK_NAME: create_qed_selfies_task,
     MOLECULE_SIMILARITY_TASK_NAME: create_molecule_similarity_task,

@@ -22,6 +22,7 @@ from .core import (
     PerTrialEvalTimePlotter,
     RegretTracePlotter,
     ScalarBarPlotter,
+    StringParam,
     Task,
 )
 from .tasks import ALL_TASK_NAMES, create_task
@@ -631,6 +632,12 @@ def _generate_two_algorithm_suite_plots(
 
 def _require_algorithm_support(task: Task, algorithm_name: str) -> None:
     algorithm_spec = ALGORITHM_REGISTRY[algorithm_name]
+    string_params = [param.name for param in task.spec.search_space if isinstance(param, StringParam)]
+    if string_params and not algorithm_spec.supports_string:
+        raise ValueError(
+            f"Algorithm `{algorithm_name}` does not support open string parameters "
+            f"{string_params!r} on task `{task.spec.name}`."
+        )
     try:
         task.spec.search_space.numeric_bounds()
         return
