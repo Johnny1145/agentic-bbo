@@ -181,9 +181,8 @@ class CategoricalParam(ParameterSpec):
 class StringParam(ParameterSpec):
     """Open string parameter for task inputs such as SMILES.
 
-    `sample()` returns the explicit default instead of inventing strings. Generic
-    optimizers should only use this parameter type when repeating that default is
-    meaningful, or should provide a string-aware candidate generator.
+    Open strings do not have a generic uniform sampler. Algorithms must provide
+    a string-aware candidate generator instead of relying on `sample()`.
     """
 
     min_length: int = 0
@@ -225,7 +224,9 @@ class StringParam(ParameterSpec):
             raise ValueError(f"StringParam `{self.name}` value does not match pattern {self.pattern!r}.")
 
     def sample(self, rng: random.Random) -> str:
-        return self.effective_default()
+        raise TypeError(
+            f"StringParam `{self.name}` does not define a generic random sampler."
+        )
 
     def effective_default(self) -> str:
         if self.default is None:

@@ -50,7 +50,7 @@ def test_string_param_validates_and_samples_default() -> None:
     )
 
     assert param.coerce("C") == "C"
-    assert param.sample(random.Random(0)) == "CCO"
+    assert param.effective_default() == "CCO"
 
     try:
         param.coerce("")
@@ -67,15 +67,26 @@ def test_string_param_validates_and_samples_default() -> None:
         raise AssertionError("Expected a validation error for a pattern mismatch.")
 
 
-def test_string_param_requires_explicit_default_for_sampling() -> None:
+def test_string_param_requires_explicit_default() -> None:
     param = StringParam("smiles", min_length=0, max_length=16)
 
     try:
-        param.sample(random.Random(0))
+        param.effective_default()
     except ValueError as exc:
         assert "does not define a default" in str(exc)
     else:  # pragma: no cover
-        raise AssertionError("Expected StringParam.sample to require an explicit default.")
+        raise AssertionError("Expected StringParam.effective_default to require an explicit default.")
+
+
+def test_string_param_does_not_generic_sample() -> None:
+    param = StringParam("smiles", default="CCO", min_length=0, max_length=16)
+
+    try:
+        param.sample(random.Random(0))
+    except TypeError as exc:
+        assert "generic random sampler" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("Expected StringParam.sample to reject generic random sampling.")
 
 
 def test_string_param_is_not_continuous_convertible() -> None:

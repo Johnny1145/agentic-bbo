@@ -22,7 +22,6 @@ class AlgorithmSpec:
     family: str
     numeric_only: bool = False
     categorical_to_continuous: str | None = None
-    supports_string: bool = False
 
 
 ALGORITHM_REGISTRY: dict[str, AlgorithmSpec] = {

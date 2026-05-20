@@ -327,7 +327,7 @@ def test_guacamol_smiles_task_sanity(task_name: str) -> None:
 
 def test_guacamol_smiles_rejects_generic_random_search(tmp_path: Path) -> None:
     pytest.importorskip("rdkit")
-    with pytest.raises(ValueError, match="open string parameters"):
+    with pytest.raises(RuntimeError, match="failed during ask") as exc_info:
         run_single_experiment(
             task_name=GUACAMOL_QED_SMILES_TASK_NAME,
             algorithm_name="random_search",
@@ -337,6 +337,8 @@ def test_guacamol_smiles_rejects_generic_random_search(tmp_path: Path) -> None:
             resume=False,
             generate_plots=False,
         )
+    assert isinstance(exc_info.value.__cause__, TypeError)
+    assert "generic random sampler" in str(exc_info.value.__cause__)
 
 
 @pytest.mark.parametrize(
