@@ -19,6 +19,7 @@ from .llm_based import (
 )
 from .llm_based.skydiscover_interleaved import SkydiscoverInterleavedAlgorithm
 from .model_based import CustomPfnsBoAlgorithm, OptunaTpeAlgorithm, Pfns4BoAlgorithm, TabPfnV2BoAlgorithm
+from .molecular import GraphGAAlgorithm, GraphGPBOAlgorithm
 from .registry import ALGORITHM_REGISTRY, AlgorithmSpec, algorithms_by_family, create_algorithm
 from .traditional import PyCmaAlgorithm, RandomSearchAlgorithm
 
@@ -28,6 +29,8 @@ __all__ = [
     "ClaudeCodeBBOAlgorithm",
     "CustomPfnsBoAlgorithm",
     "GeneralAgentBBOAlgorithm",
+    "GraphGAAlgorithm",
+    "GraphGPBOAlgorithm",
     "HeuristicLlamboBackend",
     "HeuristicOproBackend",
     "LlamboAlgorithm",

@@ -10,6 +10,7 @@ from .agentic import ClaudeCodeBBOAlgorithm, NanobotBBOAlgorithm, OpenAICompatib
 from .llm_based import LlamboAlgorithm, OproAlgorithm
 from .llm_based.skydiscover_interleaved import SkydiscoverInterleavedAlgorithm
 from .model_based import CustomPfnsBoAlgorithm, OptunaTpeAlgorithm, Pfns4BoAlgorithm, TabPfnV2BoAlgorithm
+from .molecular import GraphGAAlgorithm, GraphGPBOAlgorithm
 from .traditional import PyCmaAlgorithm, RandomSearchAlgorithm
 
 
@@ -70,6 +71,21 @@ ALGORITHM_REGISTRY: dict[str, AlgorithmSpec] = {
         description="Custom-trained PFN surrogate over a deterministic candidate pool for arbitrary-dimensional BO tasks.",
         family="model_based",
         categorical_to_continuous="onehot",
+    ),
+    "graph_ga": AlgorithmSpec(
+        factory=GraphGAAlgorithm,
+        description="PMO Graph GA over direct SMILES with ask/tell oracle evaluation.",
+        family="molecular",
+    ),
+    "gpbo": AlgorithmSpec(
+        factory=GraphGPBOAlgorithm,
+        description="PMO GPBO with Morgan fingerprints, Tanimoto GP, UCB, and Graph GA acquisition search.",
+        family="molecular",
+    ),
+    "graph_gpbo": AlgorithmSpec(
+        factory=GraphGPBOAlgorithm,
+        description="Alias for gpbo.",
+        family="molecular",
     ),
     "llambo": AlgorithmSpec(
         factory=LlamboAlgorithm,

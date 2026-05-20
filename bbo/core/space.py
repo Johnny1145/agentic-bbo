@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import math
 import random
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Iterable, Pattern
 
 import numpy as np
 
@@ -174,6 +175,63 @@ class CategoricalParam(ParameterSpec):
 
     def effective_default(self) -> Any:
         return self.default if self.default is not None else self.choices[0]
+
+
+@dataclass(frozen=True)
+class StringParam(ParameterSpec):
+    """Open string parameter for task inputs such as SMILES.
+
+    Open strings do not have a generic uniform sampler. Algorithms must provide
+    a string-aware candidate generator instead of relying on `sample()`.
+    """
+
+    min_length: int = 0
+    max_length: int | None = None
+    pattern: str | Pattern[str] | None = None
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.min_length < 0:
+            raise ValueError(f"StringParam `{self.name}` min_length must be non-negative.")
+        if self.max_length is not None and self.max_length < self.min_length:
+            raise ValueError(f"StringParam `{self.name}` max_length must be >= min_length.")
+        if self.default is not None:
+            self.validate(self.coerce(self.default))
+
+    def coerce(self, value: Any) -> str:
+        if isinstance(value, bytes):
+            raise ValueError(f"StringParam `{self.name}` does not accept bytes values.")
+        try:
+            coerced = str(value)
+        except Exception as exc:
+            raise ValueError(f"StringParam `{self.name}` could not coerce value {value!r}.") from exc
+        self.validate(coerced)
+        return coerced
+
+    def validate(self, value: Any) -> None:
+        if not isinstance(value, str):
+            raise ValueError(f"StringParam `{self.name}` requires a string value.")
+        length = len(value)
+        if length < self.min_length:
+            raise ValueError(
+                f"StringParam `{self.name}` expects length >= {self.min_length}, got {length}."
+            )
+        if self.max_length is not None and length > self.max_length:
+            raise ValueError(
+                f"StringParam `{self.name}` expects length <= {self.max_length}, got {length}."
+            )
+        if self.pattern is not None and re.fullmatch(self.pattern, value) is None:
+            raise ValueError(f"StringParam `{self.name}` value does not match pattern {self.pattern!r}.")
+
+    def sample(self, rng: random.Random) -> str:
+        raise TypeError(
+            f"StringParam `{self.name}` does not define a generic random sampler."
+        )
+
+    def effective_default(self) -> str:
+        if self.default is None:
+            raise ValueError(f"StringParam `{self.name}` does not define a default value.")
+        return self.coerce(self.default)
 
 
 class SearchSpace:
@@ -377,6 +435,7 @@ __all__ = [
     "IntParam",
     "ParameterSpec",
     "SearchSpace",
+    "StringParam",
     "from_configspace",
     "to_configspace",
 ]
