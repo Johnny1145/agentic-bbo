@@ -181,8 +181,8 @@ class CategoricalParam(ParameterSpec):
 class StringParam(ParameterSpec):
     """Open string parameter for task inputs such as SMILES.
 
-    `sample()` returns the effective default instead of inventing strings. Generic
-    optimizers should only use this parameter type when repeating the default is
+    `sample()` returns the explicit default instead of inventing strings. Generic
+    optimizers should only use this parameter type when repeating that default is
     meaningful, or should provide a string-aware candidate generator.
     """
 
@@ -229,9 +229,7 @@ class StringParam(ParameterSpec):
 
     def effective_default(self) -> str:
         if self.default is None:
-            if self.min_length == 0:
-                return ""
-            raise ValueError(f"StringParam `{self.name}` requires a default when min_length > 0.")
+            raise ValueError(f"StringParam `{self.name}` does not define a default value.")
         return self.coerce(self.default)
 
 
