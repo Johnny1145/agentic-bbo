@@ -1,3 +1,5 @@
 # Environment Setup
 
-This task requires RDKit in the host Python environment. Use the repository scientific-task environment, for example `uv sync --extra dev --extra bo-tutorial`.
+Implementation source: `bbo/tasks/scientific/guacamol_smiles.py`, `_require_rdkit()`.
+
+RDKit is required. The implementation error message points to `uv sync --extra dev --extra bo-tutorial`.

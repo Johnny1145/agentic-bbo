@@ -1,3 +1,5 @@
 # Domain Prior Knowledge
 
-QED is an RDKit molecular desirability score. Valid, drug-like organic molecules tend to score better than invalid strings or disconnected artifacts.
+No additional task-specific prior is added here.
+
+Use only the source benchmark, metric name, and scoring implementation recorded in `bbo/tasks/scientific/guacamol_smiles.py`.

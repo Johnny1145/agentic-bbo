@@ -1,3 +1,9 @@
 # Background
 
-This benchmark exposes the GuacaMol median molecules 1 objective as a direct SMILES-string task. Candidates are submitted as `{"smiles": "..."}` and compared with camphor and menthol using ECFP4 Tanimoto similarity.
+Implementation source: `bbo/tasks/scientific/guacamol_smiles.py`, `GUACAMOL_SMILES_TASK_DEFINITIONS["guacamol_median1_smiles_demo"]`.
+
+Source benchmark: `guacamol.standard_benchmarks.median_camphor_menthol`.
+
+Representation: direct SMILES string parameter named `smiles`.
+
+Target SMILES sources: `CAMPHOR_SMILES` and `MENTHOL_SMILES` imported from `bbo/tasks/scientific/guacamol_selfies.py`.

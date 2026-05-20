@@ -1,3 +1,11 @@
 # Goal
 
-Maximize `fexofenadine_mpo_score`, the geometric mean of atom-pair similarity to Fexofenadine, a TPSA modifier, and a logP modifier. The optimized objective is `fexofenadine_mpo_loss = 1 - fexofenadine_mpo_score`.
+Implementation source: `bbo/tasks/scientific/guacamol_smiles.py`, `_score_mol()`.
+
+Maximize `fexofenadine_mpo_score`.
+
+Optimized objective: minimize `fexofenadine_mpo_loss = 1 - fexofenadine_mpo_score`.
+
+Fingerprint type recorded in the task definition: `AP`.
+
+The implemented score uses `_geometric_mean()`.

@@ -1,3 +1,9 @@
 # Background
 
-This benchmark exposes the GuacaMol Celecoxib rediscovery objective as a direct SMILES-string task. Candidates are submitted as `{"smiles": "..."}` and compared with Celecoxib using ECFP4 Tanimoto similarity.
+Implementation source: `bbo/tasks/scientific/guacamol_smiles.py`, `GUACAMOL_SMILES_TASK_DEFINITIONS["guacamol_celecoxib_rediscovery_smiles_demo"]`.
+
+Source benchmark: `guacamol.standard_benchmarks.similarity(rediscovery=True, name='Celecoxib')`.
+
+Representation: direct SMILES string parameter named `smiles`.
+
+Target SMILES source: `CELECOXIB_SMILES` imported from `bbo/tasks/scientific/guacamol_selfies.py`.

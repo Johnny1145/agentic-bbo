@@ -1,3 +1,5 @@
 # Domain Prior Knowledge
 
-The target molecule is Aripiprazole. The task uses feature-based circular fingerprints, so pharmacophore-like similarity can matter beyond exact atom identities.
+No additional task-specific prior is added here.
+
+Use only the source benchmark, target SMILES, fingerprint type, metric name, and scoring implementation recorded in `bbo/tasks/scientific/guacamol_smiles.py`.

@@ -276,8 +276,8 @@ class GraphGPBOAlgorithm(ExternalOptimizerAdapter):
     def _build_bo_batch(self) -> None:
         if not self._observed_scores:
             raise RuntimeError("GraphGPBOAlgorithm has no observed scores. Evaluate initial SMILES first.")
-        torch, gpytorch, _ = _require_gp_deps()
-        torch.set_default_dtype(torch.float64)
+        torch, _, _ = _require_gp_deps()
+        torch_dtype = torch.float64
         np_dtype = np.float64
         known_smiles = list(self._observed_scores)
         y_all = np.asarray([self._observed_scores[smiles] for smiles in known_smiles], dtype=np_dtype)
@@ -287,7 +287,10 @@ class GraphGPBOAlgorithm(ExternalOptimizerAdapter):
         y_train = np.asarray([self._observed_scores[smiles] for smiles in train_smiles], dtype=np_dtype)
 
         TanimotoGP = _make_tanimoto_gp_class()
-        gp_model = TanimotoGP(train_x=torch.as_tensor(x_train), train_y=torch.as_tensor(y_train))
+        gp_model = TanimotoGP(
+            train_x=torch.as_tensor(x_train, dtype=torch_dtype),
+            train_y=torch.as_tensor(y_train, dtype=torch_dtype),
+        )
         _fit_gp_hyperparameters(gp_model)
         gp_model.eval()
 
@@ -295,7 +298,11 @@ class GraphGPBOAlgorithm(ExternalOptimizerAdapter):
 
         def acquisition_for_smiles(smiles_list: list[str]) -> list[float]:
             fp_array = np.stack([self._fingerprint(smiles) for smiles in smiles_list]).astype(np_dtype)
-            mu_pred, var_pred = _batch_predict_mu_var_numpy(gp_model, torch.as_tensor(fp_array), batch_size=2**15)
+            mu_pred, var_pred = _batch_predict_mu_var_numpy(
+                gp_model,
+                torch.as_tensor(fp_array, dtype=torch_dtype),
+                batch_size=2**15,
+            )
             values = _upper_confidence_bound(mu_pred, var_pred, beta=beta_curr**2)
             return [float(value) for value in values]
 

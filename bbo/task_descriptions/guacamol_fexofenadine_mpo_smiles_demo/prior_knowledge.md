@@ -1,3 +1,5 @@
 # Domain Prior Knowledge
 
-The score balances similarity to Fexofenadine with TPSA and logP preferences. Improving only one component may not improve the geometric mean if another component is near zero.
+No additional task-specific prior is added here.
+
+Use only the source benchmark, target SMILES, fingerprint type, metric name, and scoring implementation recorded in `bbo/tasks/scientific/guacamol_smiles.py`.

@@ -1,3 +1,5 @@
 # Domain Prior Knowledge
 
-The score is a geometric mean, so a useful candidate must retain similarity to both camphor and menthol rather than only matching one target.
+No additional task-specific prior is added here.
+
+Use only the source benchmark, target SMILES, fingerprint type, metric name, and scoring implementation recorded in `bbo/tasks/scientific/guacamol_smiles.py`.
