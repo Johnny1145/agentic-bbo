@@ -1,5 +1,6 @@
 """Molecular optimization algorithms and reusable operators."""
 
+from .graph_ga import GraphGAAlgorithm
 from .graph_ga_ops import (
     CachedBatchScoringFunction,
     GraphGACandidateOptimizer,
@@ -8,6 +9,7 @@ from .graph_ga_ops import (
 
 __all__ = [
     "CachedBatchScoringFunction",
+    "GraphGAAlgorithm",
     "GraphGACandidateOptimizer",
     "GraphGAOptimizationResult",
 ]

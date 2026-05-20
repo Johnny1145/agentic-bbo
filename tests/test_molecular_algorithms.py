@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import pytest
 
+from bbo.algorithms.molecular.graph_ga import GraphGAAlgorithm
 from bbo.algorithms.molecular.graph_ga_ops import GraphGACandidateOptimizer, morgan_fingerprint_array
+from bbo.core import ObjectiveDirection, ObjectiveSpec, SearchSpace, StringParam, TaskSpec, TrialObservation, TrialStatus
 
 
 def test_graph_ga_candidate_optimizer_runs_with_batch_scoring_callback() -> None:
@@ -31,3 +33,36 @@ def test_morgan_fingerprint_array_uses_explicit_bit_count() -> None:
     fp = morgan_fingerprint_array("CCO", radius=2, n_bits=128)
 
     assert fp.shape == (128,)
+
+
+def test_graph_ga_algorithm_uses_initial_smiles_then_generates_offspring() -> None:
+    pytest.importorskip("rdkit")
+    spec = TaskSpec(
+        name="smiles_demo",
+        search_space=SearchSpace([StringParam("smiles", default="", max_length=128)]),
+        objectives=(ObjectiveSpec("loss", ObjectiveDirection.MINIMIZE),),
+        max_evaluations=8,
+    )
+    algorithm = GraphGAAlgorithm(
+        initial_smiles=["CCO", "CCN", "c1ccccc1", "CC(=O)O"],
+        population_size=4,
+        offspring_size=4,
+        mutation_rate=0.01,
+    )
+    algorithm.setup(spec, seed=0)
+
+    initial_suggestions = [algorithm.ask() for _ in range(4)]
+    assert [item.metadata["graph_ga_phase"] for item in initial_suggestions] == 4 * ["initial_population"]
+    for index, suggestion in enumerate(initial_suggestions):
+        algorithm.tell(
+            TrialObservation(
+                suggestion=suggestion,
+                status=TrialStatus.SUCCESS,
+                objectives={"loss": float(4 - index)},
+            )
+        )
+
+    offspring = algorithm.ask()
+    assert offspring.metadata["graph_ga_phase"] == "offspring"
+    assert isinstance(offspring.config["smiles"], str)
+    assert offspring.config["smiles"] not in {item.config["smiles"] for item in initial_suggestions}
