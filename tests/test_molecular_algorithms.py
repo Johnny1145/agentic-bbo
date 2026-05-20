@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import pytest
 
+from bbo.algorithms import ALGORITHM_REGISTRY
 from bbo.algorithms.molecular.gpbo import GraphGPBOAlgorithm
 from bbo.algorithms.molecular.graph_ga import GraphGAAlgorithm
 from bbo.algorithms.molecular.graph_ga_ops import GraphGACandidateOptimizer, morgan_fingerprint_array
 from bbo.core import ObjectiveDirection, ObjectiveSpec, SearchSpace, StringParam, TaskSpec, TrialObservation, TrialStatus
+from bbo.run import build_arg_parser
 
 
 def test_graph_ga_candidate_optimizer_runs_with_batch_scoring_callback() -> None:
@@ -27,6 +29,30 @@ def test_graph_ga_candidate_optimizer_runs_with_batch_scoring_callback() -> None
     assert result.scores_by_smiles
     assert len(result.generation_info) == 1
     assert result.generation_info[0]["size"] > 0
+
+
+def test_molecular_algorithms_are_registered_and_cli_visible(tmp_path) -> None:
+    parser = build_arg_parser()
+    algorithm_action = next(action for action in parser._actions if action.dest == "algorithm")
+    smiles_path = tmp_path / "start.smi"
+
+    assert "graph_ga" in ALGORITHM_REGISTRY
+    assert "gpbo" in ALGORITHM_REGISTRY
+    assert "graph_gpbo" in ALGORITHM_REGISTRY
+    assert ALGORITHM_REGISTRY["graph_ga"].family == "molecular"
+    assert ALGORITHM_REGISTRY["gpbo"].family == "molecular"
+    assert "graph_ga" in algorithm_action.choices
+    assert "gpbo" in algorithm_action.choices
+
+    args = parser.parse_args(
+        [
+            "--algorithm",
+            "graph_ga",
+            "--molecular-initial-smiles-path",
+            str(smiles_path),
+        ]
+    )
+    assert args.molecular_initial_smiles_path == smiles_path
 
 
 def test_morgan_fingerprint_array_uses_explicit_bit_count() -> None:

@@ -72,6 +72,12 @@ bo-tutorial-full = [
   "pymoo==0.6.1.6",
   "torch>=1.9.0",
 ]
+molecular = [
+  "botorch",
+  "gpytorch>=1.4.0",
+  "rdkit",
+  "torch>=1.9.0",
+]
 pfns4bo = [
   "botorch==0.7.2",
   "gpytorch==1.9.0",

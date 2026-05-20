@@ -244,6 +244,7 @@ def run_single_experiment(
     skydiscover_search_type: str = "topk",
     skydiscover_model: str | None = None,
     skydiscover_max_meta_history: int = 32,
+    molecular_initial_smiles_path: str | Path | None = None,
 ) -> dict[str, Any]:
     resolved_task_kwargs = dict(task_kwargs or {})
     if surrogate_path is not None:
@@ -289,6 +290,10 @@ def run_single_experiment(
             "pool_size": pfns_pool_size,
             "acquisition": pfns_acquisition,
             "model_path": pfns_custom_model_path,
+        }
+    elif algorithm_name in {"graph_ga", "gpbo", "graph_gpbo"}:
+        algorithm_kwargs = {
+            "initial_smiles_path": molecular_initial_smiles_path,
         }
     elif algorithm_name in {"pablo", "palbo"}:
         algorithm_kwargs = {
@@ -703,6 +708,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=True,
     )
+    parser.add_argument(
+        "--molecular-initial-smiles-path",
+        type=Path,
+        default=None,
+        help="SMILES file used as the explicit initial population for graph_ga/gpbo.",
+    )
     parser.add_argument("--pablo-provider", default="mock", choices=["mock", "openai-compatible"])
     parser.add_argument("--pablo-base-url", default=None)
     parser.add_argument("--pablo-api-key-env", default="PABLO_API_KEY")
@@ -897,6 +908,7 @@ def main(argv: list[str] | None = None) -> int:
             skydiscover_search_type=args.skydiscover_search_type,
             skydiscover_model=args.skydiscover_model,
             skydiscover_max_meta_history=args.skydiscover_max_meta_history,
+            molecular_initial_smiles_path=args.molecular_initial_smiles_path,
         )
 
     print(json.dumps(summary, indent=2, sort_keys=True))
