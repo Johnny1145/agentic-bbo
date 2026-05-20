@@ -340,6 +340,47 @@ def test_guacamol_smiles_rejects_generic_random_search(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    ("task_name", "smiles", "expected_score"),
+    [
+        (
+            GUACAMOL_CELECOXIB_REDISCOVERY_SMILES_TASK_NAME,
+            "Cc1ccc(C=Nc2ccc(S(N)(=O)=O)cc2)cc1",
+            0.4588235294117647,
+        ),
+        (
+            GUACAMOL_TROGLITAZONE_REDISCOVERY_SMILES_TASK_NAME,
+            "Cc1c(C)c2c(c(C)c1O)CCC(C)(C(=O)NCOc1ccc(O)cc1)O2",
+            0.5094339622641509,
+        ),
+        (
+            GUACAMOL_ARIPIPRAZOLE_SIMILARITY_SMILES_TASK_NAME,
+            "O=C1NCc2ccc(OCCCCN3CCN(c4cccc(Cl)c4Cl)CC3)cc2O1",
+            0.9866666666666666,
+        ),
+        (
+            GUACAMOL_FEXOFENADINE_MPO_SMILES_TASK_NAME,
+            "COC(=O)C1=CC(F)=CC=S1NC(=O)COCC(O)N1CCC(C(c2ccccc2)c2ccccc2)CC1",
+            0.784002259753152,
+        ),
+    ],
+)
+def test_guacamol_smiles_matches_local_pmo_reference_scores(
+    task_name: str,
+    smiles: str,
+    expected_score: float,
+) -> None:
+    # Reference values are copied from local PMO GuacaMol scorer tests:
+    # /home/trx/lty/mol_opt/main/dog_gen/testing/test_script_utils/test_opt_utils.py
+    pytest.importorskip("rdkit")
+    task = create_guacamol_smiles_task(task_name, max_evaluations=1)
+    result = task.evaluate(TrialSuggestion(config={"smiles": smiles}))
+
+    assert result.success
+    assert result.metadata["valid_smiles"] is True
+    assert result.metrics["guacamol_score"] == pytest.approx(expected_score)
+
+
+@pytest.mark.parametrize(
     "task_name",
     [HER_TASK_NAME, HEA_TASK_NAME, OER_TASK_NAME, BH_TASK_NAME],
 )
