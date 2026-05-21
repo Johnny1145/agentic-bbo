@@ -8,4 +8,4 @@ Optimized objective: minimize `zaleplon_mpo_loss = 1 - zaleplon_mpo_score`.
 
 Fingerprint type recorded in the task definition: `ECFP4`.
 
-The implemented score uses `_geometric_mean()` over Zaleplon ECFP4 similarity and formula modifiers.
+The implemented score uses `_geometric_mean()` over the PMO/PyTDC 0.3.6 Zaleplon ECFP4 similarity and formula components.

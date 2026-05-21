@@ -67,6 +67,7 @@ TADALAFIL_SMILES = "O=C1N(CC(N2C1CC3=C(C2C4=CC5=C(OCO5)C=C4)NC6=C3C=CC=C6)=O)C"
 SILDENAFIL_SMILES = "CCCC1=NN(C2=C1N=C(NC2=O)C3=C(C=CC(=C3)S(=O)(=O)N4CCN(CC4)C)OCC)C"
 
 _FORMULA_TOKEN_RE = re.compile(r"([A-Z][a-z]?)([0-9]*)")
+_PMO_FORMULA_TOKEN_RE = re.compile(r"([A-Z][a-z]*)([0-9]*)")
 
 
 def _parse_molecular_formula(formula: str) -> tuple[tuple[str, int], ...]:
@@ -81,6 +82,10 @@ def _parse_molecular_formula(formula: str) -> tuple[tuple[str, int], ...]:
     if position != len(formula) or not parts:
         raise ValueError(f"Unsupported molecular formula syntax: {formula!r}")
     return tuple(parts)
+
+
+def _parse_pmo_formula_like_text(text: str) -> tuple[tuple[str, int], ...]:
+    return tuple((element, int(count_text or "1")) for element, count_text in _PMO_FORMULA_TOKEN_RE.findall(text))
 
 
 def _require_rdkit():
@@ -129,7 +134,8 @@ class GuacamolSmilesTaskConfig:
 class GuacamolSmilesTask(Task):
     """GuacaMol-derived objective over an open SMILES string parameter.
 
-    Scoring formulas follow the local GuacaMol standard_benchmarks reference.
+    Scoring formulas follow PMO's PyTDC oracle behavior for the PMO benchmark
+    tasks, including the PyTDC 0.3.6 Sitagliptin and Zaleplon formulas.
     The empty default SMILES is schema-only and must not be used as an optimizer
     initial population or seed.
     """
@@ -273,6 +279,20 @@ class GuacamolSmilesTask(Task):
         scores.append(self._gaussian(float(self._chem.AddHs(mol).GetNumAtoms()), float(total_atoms), 2.0))
         return self._geometric_mean(scores)
 
+    def _pmo_tdc_formula_score(self, mol: Any, canonical_smiles: str, formula: str) -> float:
+        formula_parts = _parse_pmo_formula_like_text(formula)
+        total_atoms = sum(count for _, count in formula_parts)
+        scores = [
+            self._gaussian(float(self._atom_count(mol, element)), float(count), 1.0)
+            for element, count in formula_parts
+        ]
+        # PyTDC 0.3.6 parses the evaluated SMILES text here instead of the
+        # molecule formula. PMO canonicalizes valid SMILES before calling TDC.
+        pmo_smiles_parts = _parse_pmo_formula_like_text(canonical_smiles)
+        pmo_total_atoms = sum(count for _, count in pmo_smiles_parts)
+        scores.append(self._gaussian(float(pmo_total_atoms), float(total_atoms), 2.0))
+        return self._geometric_mean(scores)
+
     def _smarts_score(self, mol: Any, smarts: str) -> float:
         target = self._chem.MolFromSmarts(smarts)
         if target is None:
@@ -288,7 +308,7 @@ class GuacamolSmilesTask(Task):
     def _bertz(self, mol: Any) -> float:
         return float(self._descriptors.BertzCT(mol))
 
-    def _score_mol(self, mol: Any) -> float:
+    def _score_mol(self, mol: Any, canonical_smiles: str) -> float:
         name = self.definition.task_name
         if name == GUACAMOL_QED_SMILES_TASK_NAME:
             return float(self._descriptors.qed(mol))
@@ -340,15 +360,10 @@ class GuacamolSmilesTask(Task):
             tpsa_f = self._max_gaussian(self._tpsa(mol), 95.0, 20.0)
             return self._geometric_mean((similar_to_ranolazine, logp_under_4, fluorine, tpsa_f))
         if name == GUACAMOL_SITAGLIPTIN_MPO_SMILES_TASK_NAME:
-            sitagliptin = self._chem.MolFromSmiles(SITAGLIPTIN_SMILES)
-            if sitagliptin is None:
-                raise ValueError(f"Invalid GuacaMol target SMILES: {SITAGLIPTIN_SMILES!r}")
-            target_logp = self._logp(sitagliptin)
-            target_tpsa = self._tpsa(sitagliptin)
-            similarity = self._gaussian(self._tanimoto(mol, SITAGLIPTIN_SMILES, "ECFP4"), 0.0, 0.1)
-            logp_score = self._gaussian(self._logp(mol), target_logp, 0.2)
-            tpsa_score = self._gaussian(self._tpsa(mol), target_tpsa, 5.0)
-            isomers = self._formula_score(mol, SITAGLIPTIN_FORMULA)
+            similarity = self._tanimoto(mol, SITAGLIPTIN_SMILES, "ECFP4")
+            logp_score = self._logp(mol)
+            tpsa_score = self._tpsa(mol)
+            isomers = self._pmo_tdc_formula_score(mol, canonical_smiles, SITAGLIPTIN_FORMULA)
             return self._geometric_mean((similarity, logp_score, tpsa_score, isomers))
         if name == GUACAMOL_VALSARTAN_SMARTS_SMILES_TASK_NAME:
             property_target = self._chem.MolFromSmiles(VALSARTAN_PROPERTY_TARGET_SMILES)
@@ -361,7 +376,7 @@ class GuacamolSmilesTask(Task):
             return self._geometric_mean((smarts_score, logp_score, tpsa_score, bertz_score))
         if name == GUACAMOL_ZALEPLON_MPO_SMILES_TASK_NAME:
             zaleplon = self._tanimoto(mol, ZALEPLON_SMILES, "ECFP4")
-            formula = self._formula_score(mol, ZALEPLON_FORMULA)
+            formula = self._pmo_tdc_formula_score(mol, canonical_smiles, ZALEPLON_FORMULA)
             return self._geometric_mean((zaleplon, formula))
         raise RuntimeError(f"No scoring implementation for task `{name}`.")
 
@@ -375,10 +390,10 @@ class GuacamolSmilesTask(Task):
             canonical_smiles = self._chem.MolToSmiles(mol, canonical=True)
         except Exception:
             canonical_smiles = str(smiles)
-        score = self._score_mol(mol)
+        score = self._score_mol(mol, str(canonical_smiles))
         if not math.isfinite(score):
             return 0.0, False, str(canonical_smiles)
-        return float(min(max(score, 0.0), 1.0)), True, str(canonical_smiles)
+        return float(score), True, str(canonical_smiles)
 
     def evaluate(self, suggestion: TrialSuggestion) -> EvaluationResult:
         start = time.perf_counter()
@@ -559,11 +574,11 @@ GUACAMOL_SMILES_TASK_DEFINITIONS: dict[str, GuacamolSmilesBenchmarkDefinition] =
         GUACAMOL_SITAGLIPTIN_MPO_SMILES_TASK_NAME,
         "GuacaMol Sitagliptin MPO SMILES",
         "sitagliptin_mpo",
-        "guacamol.standard_benchmarks.sitagliptin_replacement",
+        "tdc.Oracle(name='sitagliptin_mpo') via PMO PyTDC 0.3.6",
         target_smiles=(SITAGLIPTIN_SMILES,),
         fingerprint_types=("ECFP4",),
         category="mpo",
-        description="Optimize for Sitagliptin-like properties and formula while discouraging ECFP4 similarity.",
+        description="Optimize the PMO/PyTDC 0.3.6 Sitagliptin MPO oracle over canonical SMILES.",
     ),
     GUACAMOL_VALSARTAN_SMARTS_SMILES_TASK_NAME: _definition(
         GUACAMOL_VALSARTAN_SMARTS_SMILES_TASK_NAME,
@@ -579,11 +594,11 @@ GUACAMOL_SMILES_TASK_DEFINITIONS: dict[str, GuacamolSmilesBenchmarkDefinition] =
         GUACAMOL_ZALEPLON_MPO_SMILES_TASK_NAME,
         "GuacaMol Zaleplon MPO SMILES",
         "zaleplon_mpo",
-        "guacamol.standard_benchmarks.zaleplon_with_other_formula",
+        "tdc.Oracle(name='zaleplon_mpo') via PMO PyTDC 0.3.6",
         target_smiles=(ZALEPLON_SMILES,),
         fingerprint_types=("ECFP4",),
         category="mpo",
-        description="Optimize Zaleplon similarity together with the C19H17N3O2 formula target.",
+        description="Optimize the PMO/PyTDC 0.3.6 Zaleplon MPO oracle over canonical SMILES.",
     ),
 }
 

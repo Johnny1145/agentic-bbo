@@ -8,4 +8,4 @@
 
 任务定义中记录的 fingerprint type：`ECFP4`。
 
-实现中使用 `_geometric_mean()`，合并 Sitagliptin ECFP4 去相似度、logP、TPSA 和分子式 modifier。
+实现中使用 `_geometric_mean()`，合并 PMO/PyTDC 0.3.6 的 Sitagliptin ECFP4 相似度、原始 logP、原始 TPSA 和分子式分量。
