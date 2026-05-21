@@ -8,4 +8,4 @@ Optimized objective: minimize `sitagliptin_mpo_loss = 1 - sitagliptin_mpo_score`
 
 Fingerprint type recorded in the task definition: `ECFP4`.
 
-The implemented score uses `_geometric_mean()` over the PMO/PyTDC 0.3.6 Sitagliptin ECFP4 similarity, raw logP, raw TPSA, and formula components.
+The implemented score uses `_geometric_mean()` over Sitagliptin ECFP4 dissimilarity, logP, TPSA, and formula modifiers.

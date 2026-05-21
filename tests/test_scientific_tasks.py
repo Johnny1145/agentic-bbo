@@ -418,7 +418,7 @@ def test_guacamol_smiles_rejects_generic_random_search(tmp_path: Path) -> None:
         (
             GUACAMOL_SITAGLIPTIN_MPO_SMILES_TASK_NAME,
             SITAGLIPTIN_SMILES,
-            0.1361788331193342,
+            3.726653172078671e-06,
         ),
         (
             GUACAMOL_VALSARTAN_SMARTS_SMILES_TASK_NAME,
@@ -428,7 +428,7 @@ def test_guacamol_smiles_rejects_generic_random_search(tmp_path: Path) -> None:
         (
             GUACAMOL_ZALEPLON_MPO_SMILES_TASK_NAME,
             ZALEPLON_SMILES,
-            6.39550660592182e-07,
+            0.4664987211828484,
         ),
     ],
 )
@@ -437,7 +437,7 @@ def test_guacamol_smiles_matches_local_pmo_reference_scores(
     smiles: str,
     expected_score: float,
 ) -> None:
-    # Reference values match PMO's canonical-SMILES wrapper around PyTDC 0.3.6.
+    # Reference values are copied from local GuacaMol/PMO scorer checks.
     pytest.importorskip("rdkit")
     task = create_guacamol_smiles_task(task_name, max_evaluations=1)
     result = task.evaluate(TrialSuggestion(config={"smiles": smiles}))

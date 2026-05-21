@@ -8,4 +8,4 @@
 
 任务定义中记录的 fingerprint type：`ECFP4`。
 
-实现中使用 `_geometric_mean()`，合并 PMO/PyTDC 0.3.6 的 Zaleplon ECFP4 相似度和分子式分量。
+实现中使用 `_geometric_mean()`，合并 Zaleplon ECFP4 相似度和分子式 modifier。

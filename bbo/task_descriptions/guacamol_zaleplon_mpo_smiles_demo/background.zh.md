@@ -2,7 +2,7 @@
 
 实现来源：`bbo/tasks/scientific/guacamol_smiles.py`，`GUACAMOL_SMILES_TASK_DEFINITIONS["guacamol_zaleplon_mpo_smiles_demo"]`。
 
-源 benchmark：PMO 对 PyTDC 0.3.6 `tdc.Oracle(name='zaleplon_mpo')` 的 canonical-SMILES 包装。
+源 benchmark：`guacamol.standard_benchmarks.zaleplon_with_other_formula`。
 
 表示方式：名为 `smiles` 的直接 SMILES 字符串参数。
 
