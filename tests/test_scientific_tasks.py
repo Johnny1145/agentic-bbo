@@ -11,13 +11,19 @@ from bbo.tasks import (
     ALL_TASK_NAMES,
     BH_TASK_NAME,
     GUACAMOL_QED_TASK_NAME,
+    GUACAMOL_AMLODIPINE_MPO_SMILES_TASK_NAME,
     GUACAMOL_ARIPIPRAZOLE_SIMILARITY_TASK_NAME,
     GUACAMOL_CELECOXIB_REDISCOVERY_TASK_NAME,
     GUACAMOL_FEXOFENADINE_MPO_TASK_NAME,
     GUACAMOL_MEDIAN1_TASK_NAME,
+    GUACAMOL_MEDIAN2_SMILES_TASK_NAME,
+    GUACAMOL_OSIMERTINIB_MPO_SMILES_TASK_NAME,
+    GUACAMOL_PERINDOPRIL_MPO_SMILES_TASK_NAME,
     GUACAMOL_QED_SELFIES_TASK_NAME,
     GUACAMOL_QED_SMILES_TASK_NAME,
+    GUACAMOL_RANOLAZINE_MPO_SMILES_TASK_NAME,
     GUACAMOL_SELFIES_TASK_NAMES,
+    GUACAMOL_SITAGLIPTIN_MPO_SMILES_TASK_NAME,
     GUACAMOL_SMILES_TASK_NAMES,
     GUACAMOL_ARIPIPRAZOLE_SIMILARITY_SMILES_TASK_NAME,
     GUACAMOL_CELECOXIB_REDISCOVERY_SMILES_TASK_NAME,
@@ -25,6 +31,8 @@ from bbo.tasks import (
     GUACAMOL_MEDIAN1_SMILES_TASK_NAME,
     GUACAMOL_TROGLITAZONE_REDISCOVERY_SMILES_TASK_NAME,
     GUACAMOL_TROGLITAZONE_REDISCOVERY_TASK_NAME,
+    GUACAMOL_VALSARTAN_SMARTS_SMILES_TASK_NAME,
+    GUACAMOL_ZALEPLON_MPO_SMILES_TASK_NAME,
     HEA_TASK_NAME,
     HER_FEATURES,
     HER_TASK_NAME,
@@ -45,6 +53,16 @@ from bbo.tasks import (
 )
 from bbo.tasks.scientific import CACHE_ROOT_ENV, SOURCE_ROOT_ENV, VENDORED_SOURCE_ROOT
 from bbo.tasks.scientific.guacamol_selfies import CELECOXIB_SMILES
+from bbo.tasks.scientific.guacamol_smiles import (
+    AMLODIPINE_SMILES,
+    OSIMERTINIB_SMILES,
+    PERINDOPRIL_SMILES,
+    RANOLAZINE_SMILES,
+    SITAGLIPTIN_SMILES,
+    TADALAFIL_SMILES,
+    VALSARTAN_SMARTS,
+    ZALEPLON_SMILES,
+)
 
 
 def _require_bo_tutorial_source() -> Path:
@@ -82,6 +100,14 @@ def test_scientific_registry_contains_all_tasks() -> None:
     assert GUACAMOL_ARIPIPRAZOLE_SIMILARITY_SMILES_TASK_NAME in ALL_TASK_NAMES
     assert GUACAMOL_FEXOFENADINE_MPO_SMILES_TASK_NAME in ALL_TASK_NAMES
     assert GUACAMOL_MEDIAN1_SMILES_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_AMLODIPINE_MPO_SMILES_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_MEDIAN2_SMILES_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_OSIMERTINIB_MPO_SMILES_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_PERINDOPRIL_MPO_SMILES_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_RANOLAZINE_MPO_SMILES_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_SITAGLIPTIN_MPO_SMILES_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_VALSARTAN_SMARTS_SMILES_TASK_NAME in ALL_TASK_NAMES
+    assert GUACAMOL_ZALEPLON_MPO_SMILES_TASK_NAME in ALL_TASK_NAMES
     assert MOLECULE_TASK_NAME in ALL_TASK_NAMES
     assert QED_SELFIES_TASK_NAME in ALL_TASK_NAMES
     assert MOLECULE_SIMILARITY_TASK_NAME in ALL_TASK_NAMES
@@ -364,6 +390,46 @@ def test_guacamol_smiles_rejects_generic_random_search(tmp_path: Path) -> None:
             "COC(=O)C1=CC(F)=CC=S1NC(=O)COCC(O)N1CCC(C(c2ccccc2)c2ccccc2)CC1",
             0.784002259753152,
         ),
+        (
+            GUACAMOL_AMLODIPINE_MPO_SMILES_TASK_NAME,
+            AMLODIPINE_SMILES,
+            0.3678794411714423,
+        ),
+        (
+            GUACAMOL_MEDIAN2_SMILES_TASK_NAME,
+            TADALAFIL_SMILES,
+            0.3623715376697393,
+        ),
+        (
+            GUACAMOL_OSIMERTINIB_MPO_SMILES_TASK_NAME,
+            OSIMERTINIB_SMILES,
+            0.1333417190026552,
+        ),
+        (
+            GUACAMOL_PERINDOPRIL_MPO_SMILES_TASK_NAME,
+            PERINDOPRIL_SMILES,
+            0.01831563888873418,
+        ),
+        (
+            GUACAMOL_RANOLAZINE_MPO_SMILES_TASK_NAME,
+            RANOLAZINE_SMILES,
+            0.04923735914329035,
+        ),
+        (
+            GUACAMOL_SITAGLIPTIN_MPO_SMILES_TASK_NAME,
+            SITAGLIPTIN_SMILES,
+            3.726653172078671e-06,
+        ),
+        (
+            GUACAMOL_VALSARTAN_SMARTS_SMILES_TASK_NAME,
+            VALSARTAN_SMARTS,
+            1.555420075811193e-19,
+        ),
+        (
+            GUACAMOL_ZALEPLON_MPO_SMILES_TASK_NAME,
+            ZALEPLON_SMILES,
+            0.4664987211828484,
+        ),
     ],
 )
 def test_guacamol_smiles_matches_local_pmo_reference_scores(
@@ -371,8 +437,7 @@ def test_guacamol_smiles_matches_local_pmo_reference_scores(
     smiles: str,
     expected_score: float,
 ) -> None:
-    # Reference values are copied from local PMO GuacaMol scorer tests:
-    # /home/trx/lty/mol_opt/main/dog_gen/testing/test_script_utils/test_opt_utils.py
+    # Reference values are copied from local GuacaMol/PMO scorer checks.
     pytest.importorskip("rdkit")
     task = create_guacamol_smiles_task(task_name, max_evaluations=1)
     result = task.evaluate(TrialSuggestion(config={"smiles": smiles}))
