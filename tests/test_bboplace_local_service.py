@@ -5,6 +5,7 @@ from pathlib import Path
 from bbo.tasks.bboplace.local_service import (
     BBOPlaceEvaluatorKey,
     BBOPlaceLocalBridge,
+    _DirectUpstreamEvaluator,
     _resolve_minibench_benchmark,
     _resolve_minibench_placer,
 )
@@ -24,6 +25,18 @@ class _FakeMiniBenchEvaluator:
 
     def evaluate(self, x):
         return {"hpwl": x.sum(axis=1)}, [{"macro": (0, 0)} for _ in range(len(x))]
+
+
+class _FakeUpstreamPlacer:
+    def _evaluate(self, row):
+        return {"hpwl": row.sum()}, {"macro": (0, 0)}
+
+
+class _FakeUpstreamEvaluator:
+    n_dim = 4
+    xl = [0.0] * 4
+    xu = [1.0] * 4
+    placer = _FakeUpstreamPlacer()
 
 
 def test_bboplace_local_bridge_evaluates_payload_and_caches_evaluator(tmp_path: Path) -> None:
@@ -93,3 +106,12 @@ def test_minibench_name_and_placer_resolution(tmp_path: Path) -> None:
     assert _resolve_minibench_benchmark(tmp_path, "ispd2005/adaptec1") == "ispd2005/adaptec1"
     assert _resolve_minibench_placer("mgo") == "gg"
     assert _resolve_minibench_placer("sp") == "sp"
+
+
+def test_direct_upstream_evaluator_bypasses_ray() -> None:
+    evaluator = _DirectUpstreamEvaluator(_FakeUpstreamEvaluator())
+
+    assert evaluator.n_dim == 4
+    assert evaluator.xl.tolist() == [0.0] * 4
+    assert evaluator.xu.tolist() == [1.0] * 4
+    assert evaluator.evaluate([[1.0, 2.0, 3.0, 4.0]]).tolist() == [10.0]

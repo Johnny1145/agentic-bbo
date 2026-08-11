@@ -182,7 +182,7 @@ English counterpart for the implementation notes: `bbo/core/IMPLEMENTATION_PLAN.
 ```bash
 uv run python -m compileall -q bbo examples tests
 uv run pytest
-uv run python -m bbo.run --algorithm suite --task branin_demo
+uv run python -m bbo.run --algorithm suite --task bbob_f01_d10
 ```
 
 如果你加了新的 task，请额外确认：

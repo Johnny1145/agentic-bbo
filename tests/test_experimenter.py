@@ -19,7 +19,7 @@ from bbo.core import (
     TrialObservation,
     TrialSuggestion,
 )
-from bbo.tasks import SyntheticFunctionTask, SyntheticFunctionTaskConfig
+from bbo.tasks import create_task
 
 
 class _SingleSuggestionAlgorithm(Algorithm):
@@ -72,7 +72,7 @@ class _StrictNumericTask(Task):
 
 
 def test_experimenter_resume_keeps_append_only_history(tmp_path: Path) -> None:
-    task = SyntheticFunctionTask(SyntheticFunctionTaskConfig(problem="sphere_demo", max_evaluations=6, seed=11))
+    task = create_task("bbob_f01_d10", max_evaluations=6, seed=11)
     logger = JsonlMetricLogger(tmp_path / "trials.jsonl")
     experiment = Experimenter(
         task=task,
@@ -84,7 +84,7 @@ def test_experimenter_resume_keeps_append_only_history(tmp_path: Path) -> None:
     assert summary.n_completed == 6
     assert len(logger.load_records()) == 6
 
-    task_resume = SyntheticFunctionTask(SyntheticFunctionTaskConfig(problem="sphere_demo", max_evaluations=6, seed=11))
+    task_resume = create_task("bbob_f01_d10", max_evaluations=6, seed=11)
     resume_experiment = Experimenter(
         task=task_resume,
         algorithm=RandomSearchAlgorithm(),

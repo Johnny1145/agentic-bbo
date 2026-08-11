@@ -12,9 +12,10 @@ from ...core import Incumbent, ObjectiveDirection, SearchSpace, TaskDescriptionB
 from ...core.algo import Algorithm
 from .llm_client import PabloLlmClient, PabloProviderConfig, create_llm_client
 from .model_routing import PabloModelRoutingConfig, build_routing_table
+from .prompt_profiles import PABLO_WORKFLOW_PROMPT_PROFILE, WorkflowPromptProfile
 from .prompts import PromptBundle, build_explorer_prompt, build_planner_prompt, build_worker_prompt
 from .serialization import append_jsonl, dump_json, prompt_hash, stable_config_identity, to_jsonable
-from .state import CandidateEntry, PabloResumeState
+from .state import CandidateEntry, PabloResumeState, PabloSearchState
 from .task_registry import TaskRegistry
 from .validation import PabloValidationError, validate_candidate_payload, validate_planner_tasks
 
@@ -23,6 +24,8 @@ DEFAULT_MAX_FAILS = 3
 DEFAULT_NUM_SEEDS = 2
 DEFAULT_MAX_TASKS = 20
 DEFAULT_GLOBAL_MODEL = "gpt-4.1-mini"
+C_GLOBAL_TOP_K = 8
+C_GLOBAL_COVERAGE_K = 12
 
 
 @dataclass(frozen=True)
@@ -60,6 +63,7 @@ class PabloAlgorithm(Algorithm):
         worker_model: str | None = None,
         planner_model: str | None = None,
         explorer_model: str | None = None,
+        prompt_profile: WorkflowPromptProfile | None = None,
         init_points: int = DEFAULT_INIT_POINTS,
         max_fails: int = DEFAULT_MAX_FAILS,
         num_seeds: int = DEFAULT_NUM_SEEDS,
@@ -100,6 +104,8 @@ class PabloAlgorithm(Algorithm):
             run_dir=None if run_dir is None else Path(run_dir),
             resume=bool(resume),
         )
+        self._prompt_profiles = prompt_profile or PABLO_WORKFLOW_PROMPT_PROFILE
+        self._prompt_profiles.validate_roles({"planner", "explorer", "worker"})
         self._routing = build_routing_table(
             PabloModelRoutingConfig(
                 model=model,
@@ -119,6 +125,8 @@ class PabloAlgorithm(Algorithm):
         self._failure_streak = 0
         self._history: list[TrialObservation] = []
         self._queue: list[CandidateEntry] = []
+        self._agenda: list[PabloSearchState] = []
+        self._active_search: PabloSearchState | None = None
         self._seen_config_ids: set[str] = set()
         self._best: Incumbent | None = None
         self._primary_name: str | None = None
@@ -171,6 +179,8 @@ class PabloAlgorithm(Algorithm):
             Path(artifact_path).parent.mkdir(parents=True, exist_ok=True)
             Path(artifact_path).touch(exist_ok=True)
         self._queue = []
+        self._agenda = []
+        self._active_search = None
         self._seen_config_ids = set()
         self._history = []
         self._best = None
@@ -193,7 +203,7 @@ class PabloAlgorithm(Algorithm):
         if len(self._history) < self.config.init_points:
             return self._next_initial_suggestion()
         if not self._queue:
-            self._plan_round()
+            self._advance_feedback_search()
         if not self._queue:
             raise RuntimeError("Pablo could not produce any candidate configurations.")
         entry = self._queue.pop(0)
@@ -231,6 +241,8 @@ class PabloAlgorithm(Algorithm):
         self._require_ready()
         self._history = []
         self._queue = []
+        self._agenda = []
+        self._active_search = None
         self._seen_config_ids = set()
         self._best = None
         self._failure_streak = 0
@@ -240,6 +252,9 @@ class PabloAlgorithm(Algorithm):
             self._ingest_observation(observation, replay=True)
         if self._loaded_resume_snapshot:
             self._round_index = max(self._round_index, int(self._loaded_resume_snapshot.get("round_index", 0)))
+            self._agenda = [PabloSearchState(**item) for item in self._loaded_resume_snapshot.get("agenda", [])]
+            active = self._loaded_resume_snapshot.get("active_search")
+            self._active_search = PabloSearchState(**active) if isinstance(active, dict) else None
         self._persist_state()
 
     def incumbents(self) -> list[Incumbent]:
@@ -251,12 +266,7 @@ class PabloAlgorithm(Algorithm):
         identity = stable_config_identity(observation.suggestion.config)
         self._seen_config_ids.add(identity)
 
-        task_name = observation.suggestion.metadata.get("pablo_task_name")
-        if isinstance(task_name, str) and task_name and task_name != "INIT":
-            assert self._task_registry is not None
-            self._task_registry.record_attempt(task_name, success=observation.success)
-            dump_json(self._task_registry_path, self._task_registry.snapshot())
-
+        improved = False
         if observation.success and self._primary_name in observation.objectives:
             score = float(observation.objectives[self._primary_name])
             incumbent = Incumbent(
@@ -268,23 +278,40 @@ class PabloAlgorithm(Algorithm):
             )
             if self._best is None:
                 self._best = incumbent
+                improved = True
             elif self._primary_direction == ObjectiveDirection.MINIMIZE and score < float(self._best.score):
                 self._best = incumbent
+                improved = True
             elif self._primary_direction == ObjectiveDirection.MAXIMIZE and score > float(self._best.score):
                 self._best = incumbent
+                improved = True
+
+        task_name = observation.suggestion.metadata.get("pablo_task_name")
+        role = observation.suggestion.metadata.get("pablo_role")
+        is_method_candidate = role in {"explorer", "worker"}
+        if is_method_candidate:
+            if isinstance(task_name, str) and task_name:
+                assert self._task_registry is not None
+                self._task_registry.record_attempt(task_name, success=improved)
+            self._failure_streak = 0 if improved else self._failure_streak + 1
+            if self._active_search is not None and self._matches_active_search(observation):
+                if improved:
+                    self._active_search.consecutive_failures = 0
+                    if self._active_search.role == "worker":
+                        self._active_search.current_seed = dict(observation.suggestion.config)
+                else:
+                    self._active_search.consecutive_failures += 1
+                if self._active_search.consecutive_failures >= self.config.max_fails:
+                    self._active_search = None
+            dump_json(self._task_registry_path, self._task_registry.snapshot())
 
         if not replay:
             dump_json(self._task_registry_path, self._task_registry.snapshot() if self._task_registry is not None else {})
 
     def _next_initial_suggestion(self) -> TrialSuggestion:
-        search_space = self._require_search_space()
-        index = len(self._history)
-        if index == 0:
-            config = search_space.defaults()
-        else:
-            config = self._sample_unique_random_config()
+        config = self._sample_unique_random_config()
         metadata = {
-            "pablo_source": "initial_design",
+            "pablo_source": "initial_random",
             "pablo_role": "init",
             "pablo_round": 0,
             "pablo_provider": self.config.provider,
@@ -295,10 +322,6 @@ class PabloAlgorithm(Algorithm):
 
     def _plan_round(self) -> None:
         self._require_ready()
-        if self._failure_streak >= self.config.max_fails:
-            raise RuntimeError(
-                f"Pablo exhausted its planning budget after {self._failure_streak} consecutive empty rounds."
-            )
 
         assert self._task_spec is not None
         assert self._task_registry is not None
@@ -326,80 +349,89 @@ class PabloAlgorithm(Algorithm):
                 performance_stats=performance_stats,
                 existing_tasks_summary=existing_tasks_summary,
             )
+            planner_prompt = self._prompt_profiles.for_role("planner").compose_bundle(planner_prompt)
             planner_tasks = self._invoke_planner(planner_prompt)
             self._task_registry.update_from_planner(planner_tasks)
+            planner_tasks = self._task_registry.resolve_planner_tasks(planner_tasks)
         else:
             planner_tasks = {card.name: card.text for card in self._task_registry.active_tasks(limit=8)}
         round_record["planner_tasks"] = list(planner_tasks)
         dump_json(self._task_registry_path, self._task_registry.snapshot())
 
-        added = 0
+        agenda: list[PabloSearchState] = []
         if self.config.enable_explorer:
-            explorer_prompt = build_explorer_prompt(
-                task_spec=self._task_spec,
-                description=self._description,
-                c_global=c_global,
-                best_objective=None if self._best is None else self._best.score,
-            )
-            explorer_candidates = self._invoke_candidate_role("explorer", explorer_prompt)
-            round_record["explorer_candidate_count"] = len(explorer_candidates)
-            for config in explorer_candidates:
-                added += self._enqueue_candidate(
-                    CandidateEntry(
-                        config=config,
-                        source="explorer",
-                        role="explorer",
-                        round_index=self._round_index,
-                        task_name=None,
-                        metadata={"pablo_model": self._routing["explorer"]},
-                    )
-                )
+            agenda.append(PabloSearchState(role="explorer", round_index=self._round_index))
 
         if self.config.enable_worker:
             for task_name, task_text in planner_tasks.items():
                 seeds = self._select_worker_seeds()
-                batch_counts: list[int] = []
                 for seed_index, seed_config in enumerate(seeds):
-                    worker_prompt = build_worker_prompt(
-                        task_spec=self._task_spec,
-                        planner_task_name=task_name,
-                        planner_task_text=task_text,
-                        current_seed=seed_config,
-                    )
-                    worker_candidates = self._invoke_candidate_role("worker", worker_prompt)
-                    batch_counts.append(len(worker_candidates))
-                    for config in worker_candidates:
-                        added += self._enqueue_candidate(
-                            CandidateEntry(
-                                config=config,
-                                source="worker",
-                                role="worker",
-                                round_index=self._round_index,
-                                task_name=task_name,
-                                seed_index=seed_index,
-                                metadata={
-                                    "pablo_model": self._routing["worker"],
-                                    "pablo_planner_task_text": task_text,
-                                },
-                            )
-                        )
+                    agenda.append(PabloSearchState(
+                        role="worker", round_index=self._round_index, task_name=task_name,
+                        task_text=task_text, seed_index=seed_index, current_seed=dict(seed_config),
+                    ))
                 round_record["worker_batches"].append(
-                    {"task_name": task_name, "seed_count": len(seeds), "candidate_counts": batch_counts}
+                    {"task_name": task_name, "seed_count": len(seeds), "mode": "feedback_hill_climb"}
                 )
 
-        round_record["queue_size_after_round"] = len(self._queue)
-        round_record["queue_added"] = added
+        self._agenda.extend(agenda)
+        round_record["agenda_size"] = len(agenda)
+        round_record["queue_size_after_round"] = 0
+        round_record["queue_added"] = 0
         append_jsonl(self._rounds_path, round_record)
         self._persist_state()
 
-        if not self._queue:
-            self._failure_streak += 1
-            if self._failure_streak >= self.config.max_fails:
-                raise RuntimeError(
-                    f"Pablo planned round {self._round_index} but produced no usable candidates after deduplication."
+    def _advance_feedback_search(self) -> None:
+        """Generate one candidate, then wait for tell() before continuing."""
+        for _ in range(max(8, self.config.max_tasks * self.config.num_seeds * 2)):
+            if self._active_search is None:
+                if not self._agenda:
+                    self._plan_round()
+                if not self._agenda:
+                    continue
+                self._active_search = self._agenda.pop(0)
+            active = self._active_search
+            assert active is not None and self._task_spec is not None
+            if active.role == "explorer":
+                prompt = build_explorer_prompt(
+                    task_spec=self._task_spec, description=self._description,
+                    c_global=self._build_c_global(),
+                    best_objective=None if self._best is None else self._best.score,
+                    observed_trial_count=len(self._history),
                 )
-            return
-        self._failure_streak = 0
+                prompt = self._prompt_profiles.for_role("explorer").compose_bundle(prompt)
+            else:
+                prompt = build_worker_prompt(
+                    task_spec=self._task_spec, description=self._description,
+                    planner_task_name=active.task_name or "UNNAMED",
+                    planner_task_text=active.task_text or "Refine the current seed.",
+                    current_seed=dict(active.current_seed or self._select_worker_seeds()[0]),
+                )
+                prompt = self._prompt_profiles.for_role("worker").compose_bundle(prompt)
+            candidates = self._invoke_candidate_role(active.role, prompt)
+            for config in candidates:
+                added = self._enqueue_candidate(CandidateEntry(
+                    config=config, source=active.role, role=active.role,
+                    round_index=active.round_index, task_name=active.task_name,
+                    seed_index=active.seed_index,
+                    metadata={"pablo_model": self._routing[active.role],
+                              "pablo_planner_task_text": active.task_text,
+                              "pablo_feedback_step": True},
+                ))
+                if added:
+                    return
+            active.consecutive_failures += 1
+            if active.consecutive_failures >= self.config.max_fails:
+                self._active_search = None
+        raise RuntimeError("Pablo could not generate an unseen candidate from its feedback agenda.")
+
+    def _matches_active_search(self, observation: TrialObservation) -> bool:
+        active = self._active_search
+        metadata = observation.suggestion.metadata
+        return bool(active and metadata.get("pablo_round") == active.round_index
+                    and metadata.get("pablo_role") == active.role
+                    and metadata.get("pablo_task_name") == active.task_name
+                    and metadata.get("pablo_seed_index") == active.seed_index)
 
     def _invoke_planner(self, prompt: PromptBundle) -> dict[str, str]:
         raw = self._invoke_role_raw("planner", prompt)
@@ -448,9 +480,9 @@ class PabloAlgorithm(Algorithm):
             key=lambda obs: float(obs.objectives[self._primary_name]),
             reverse=self._primary_direction == ObjectiveDirection.MAXIMIZE,
         )
-        top_successes = scored_successes[:5]
+        top_successes = scored_successes[:C_GLOBAL_TOP_K]
         remainder = [obs for obs in self._history if obs not in top_successes]
-        sampled_remainder = self._uniform_history_sample(remainder, limit=5)
+        sampled_remainder = self._uniform_history_sample(remainder, limit=C_GLOBAL_COVERAGE_K)
         selected = top_successes + sampled_remainder
         context: list[dict[str, Any]] = []
         for observation in selected:
@@ -549,6 +581,30 @@ class PabloAlgorithm(Algorithm):
         return sampled[:limit]
 
     def _default_tasks(self, task_spec: TaskSpec) -> dict[str, str]:
+        if task_spec.metadata.get("task_family") == "bboplace" or task_spec.name.startswith("bboplace"):
+            return {
+                "SIMILAR_LAYOUT": (
+                    "TASK: Generate BBOPlace macro-coordinate configurations that are structurally similar to "
+                    "the input seed layout. HINTS: 1. Modify a small subset of macro coordinates or apply small "
+                    "coherent shifts. 2. Keep the overall relative macro order, clustering, spread, and "
+                    "orientation mostly intact. 3. Prefer conservative local refinements that may cross useful "
+                    "MGO decoding boundaries without destroying the seed's promising structure."
+                ),
+                "EXPLORE_LAYOUT": (
+                    "TASK: Generate BBOPlace macro-coordinate configurations with different meaningful placement "
+                    "changes to the input seed layout. HINTS: 1. Each output should use a distinct modification "
+                    "type, such as global shift, spread change, cluster separation, axis-specific move, partial "
+                    "macro subset perturbation, or boundary probe. 2. Make significant moves, not tiny independent "
+                    "noise. 3. Explore broadly around the seed while still respecting coordinate bounds."
+                ),
+                "LAYOUT_SCAFFOLD_HOP": (
+                    "TASK: Generate layout-scaffold hopping variations of the input seed layout. HINTS: 1. Make "
+                    "large topology-level changes to the global spatial organization of the macros. 2. Avoid "
+                    "small local edits; make substantial layout-pattern changes. 3. Try transformations such as "
+                    "compact<->spread, center<->boundary, row-like<->column-like, diagonal<->clustered, mirrored, "
+                    "rotated, or reordered coordinate patterns."
+                ),
+            }
         has_categorical = any(hasattr(param, "choices") for param in task_spec.search_space)
         default_tasks = {
             "EXPLOIT_BEST": "TASK: refine the best-known region with conservative edits.",
@@ -585,6 +641,8 @@ class PabloAlgorithm(Algorithm):
             best_score=None if self._best is None else self._best.score,
             history_size=len(self._history),
             provider=self.config.provider,
+            agenda=list(self._agenda),
+            active_search=self._active_search,
         )
         dump_json(self._resume_state_path, resume_state)
         dump_json(self._task_registry_path, {} if self._task_registry is None else self._task_registry.snapshot())

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from ....core.space import CategoricalParam, FloatParam, IntParam, SearchSpace
+from ....core.prompting import search_space_to_schema
+from ....core.space import CategoricalParam, FloatParam, IntParam, SearchSpace, StringParam
 
 
 def parameter_specs_to_search_space(specs: list[dict[str, Any]]) -> SearchSpace:
@@ -21,6 +22,7 @@ def parameter_specs_to_search_space(specs: list[dict[str, Any]]) -> SearchSpace:
                     low=float(spec["low"]),
                     high=float(spec["high"]),
                     log=bool(spec.get("log", False)),
+                    default=spec.get("default"),
                 )
             )
         elif typ == "int":
@@ -30,6 +32,7 @@ def parameter_specs_to_search_space(specs: list[dict[str, Any]]) -> SearchSpace:
                     low=int(spec["low"]),
                     high=int(spec["high"]),
                     log=bool(spec.get("log", False)),
+                    default=spec.get("default"),
                 )
             )
         elif typ == "categorical":
@@ -37,6 +40,17 @@ def parameter_specs_to_search_space(specs: list[dict[str, Any]]) -> SearchSpace:
                 CategoricalParam(
                     name=name,
                     choices=tuple(spec["choices"]),
+                    default=spec.get("default"),
+                )
+            )
+        elif typ == "string":
+            params.append(
+                StringParam(
+                    name=name,
+                    min_length=int(spec.get("min_length", 0)),
+                    max_length=None if spec.get("max_length") is None else int(spec["max_length"]),
+                    pattern=spec.get("pattern"),
+                    default=spec.get("default"),
                 )
             )
         else:
@@ -46,36 +60,4 @@ def parameter_specs_to_search_space(specs: list[dict[str, Any]]) -> SearchSpace:
 
 def search_space_to_parameter_specs(space: SearchSpace) -> list[dict[str, Any]]:
     """Convert a SearchSpace to a list of dict specs for suggest_next_config."""
-    specs: list[dict[str, Any]] = []
-    for param in space:
-        if isinstance(param, FloatParam):
-            specs.append(
-                {
-                    "name": param.name,
-                    "type": "float",
-                    "low": param.low,
-                    "high": param.high,
-                    "log": param.log,
-                }
-            )
-        elif isinstance(param, IntParam):
-            specs.append(
-                {
-                    "name": param.name,
-                    "type": "int",
-                    "low": param.low,
-                    "high": param.high,
-                    "log": param.log,
-                }
-            )
-        elif isinstance(param, CategoricalParam):
-            specs.append(
-                {
-                    "name": param.name,
-                    "type": "categorical",
-                    "choices": list(param.choices),
-                }
-            )
-        else:
-            raise TypeError(f"Unsupported parameter type: {type(param).__name__}")
-    return specs
+    return search_space_to_schema(space)

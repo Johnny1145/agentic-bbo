@@ -65,6 +65,21 @@ def test_opro_is_registered_and_cli_visible() -> None:
     assert ALGORITHM_REGISTRY["opro"].numeric_only is False
     assert "opro" in algorithm_action.choices
     assert parser.parse_args(["--algorithm", "opro"]).algorithm == "opro"
+    parsed = parser.parse_args(
+        [
+            "--algorithm",
+            "opro",
+            "--opro-backend",
+            "openai",
+            "--no-opro-openai-include-seed",
+            "--no-opro-openai-include-store",
+        ]
+    )
+    assert parsed.opro_backend == "openai"
+    assert parsed.opro_openai_include_seed is False
+    assert parsed.opro_openai_include_store is False
+    parsed = parser.parse_args(["--algorithm", "opro", "--opro-backend", "kimi"])
+    assert parsed.opro_backend == "kimi"
 
 
 def test_opro_openai_backend_must_be_injected_from_runner_layer() -> None:
@@ -151,6 +166,86 @@ def test_opro_runner_builds_online_backend_and_backend_uses_chat_completions(mon
     assert call["body"]["messages"][1]["role"] == "user"
 
 
+def test_opro_runner_builds_kimi_backend_without_openai_only_params(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("KIMI_TEST_KEY", "sk-test")
+    captured_requests: list[dict[str, Any]] = []
+
+    class _FakeHttpResponse:
+        def __init__(self, payload: dict[str, Any], status: int = 200) -> None:
+            self.payload = payload
+            self.status = status
+
+        def read(self) -> bytes:
+            return json.dumps(self.payload).encode("utf-8")
+
+        def __enter__(self) -> "_FakeHttpResponse":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    def _fake_urlopen(request, timeout: float):
+        captured_requests.append(
+            {
+                "url": request.full_url,
+                "headers": dict(request.header_items()),
+                "body": json.loads(request.data.decode("utf-8")),
+            }
+        )
+        return _FakeHttpResponse(
+            {
+                "choices": [
+                    {"message": {"content": '{"candidates":[{"lr":0.02,"depth":5,"activation":"gelu"}]}'}},
+                ]
+            }
+        )
+
+    monkeypatch.setattr("bbo.algorithms.llm_based.opro.urllib_request.urlopen", _fake_urlopen)
+
+    kwargs = _build_opro_algorithm_kwargs(
+        opro_backend="kimi",
+        opro_model="gpt-4o-mini",
+        opro_initial_samples=3,
+        opro_candidates=1,
+        opro_prompt_pairs=8,
+        opro_openai_api_key_env="OPENAI_API_KEY",
+        opro_openai_base_url=None,
+        opro_openai_organization=None,
+        opro_openai_project=None,
+        opro_openai_timeout_seconds=12.5,
+        opro_openai_max_retries=2,
+        kimi_api_key_env="KIMI_TEST_KEY",
+        kimi_base_url="https://api.kimi.com/coding/",
+        kimi_model="kimi-for-coding",
+    )
+    backend = kwargs["backend_impl"]
+    assert isinstance(backend, OpenAICompatibleOproBackend)
+    assert kwargs["model"] == "kimi-for-coding"
+    assert backend.name == "kimi"
+
+    search_space = _mixed_task_spec().search_space
+    request = OproGenerationRequest(
+        prompt="Recommend a candidate configuration.",
+        n_responses=1,
+        seed=11,
+        objective_direction=ObjectiveDirection.MINIMIZE,
+        search_space=search_space,
+        observed_points=(),
+        parameter_order=tuple(search_space.names()),
+    )
+    texts = backend.generate_candidate_texts(request)
+    assert texts == ['{"candidates":[{"lr":0.02,"depth":5,"activation":"gelu"}]}']
+
+    call = captured_requests[0]
+    call_headers = {key.lower(): value for key, value in call["headers"].items()}
+    assert call["url"] == "https://api.kimi.com/coding/v1/chat/completions"
+    assert call_headers["authorization"] == "Bearer sk-test"
+    assert call["body"]["model"] == "kimi-for-coding"
+    assert call["body"]["messages"][1]["content"] == "Recommend a candidate configuration."
+    assert "seed" not in call["body"]
+    assert "store" not in call["body"]
+
+
 def test_opro_replay_reconstructs_next_suggestion_for_mixed_space() -> None:
     task_spec = _mixed_task_spec(max_evaluations=6)
     algorithm = OproAlgorithm(
@@ -183,9 +278,56 @@ def test_opro_replay_reconstructs_next_suggestion_for_mixed_space() -> None:
     assert replayed.incumbents() == algorithm.incumbents()
 
 
+def test_opro_default_prompt_pairs_keeps_all_successful_history() -> None:
+    class _CaptureBackend:
+        name = "capture"
+
+        def __init__(self) -> None:
+            self.requests: list[OproGenerationRequest] = []
+
+        def generate_candidate_texts(self, request: OproGenerationRequest) -> list[str]:
+            self.requests.append(request)
+            return ['{"candidates":[{"lr":0.099,"depth":8,"activation":"tanh"}]}']
+
+        def request_metadata(self) -> dict[str, Any]:
+            return {}
+
+    task_spec = _mixed_task_spec(max_evaluations=30)
+    backend = _CaptureBackend()
+    algorithm = OproAlgorithm(
+        backend="heuristic",
+        backend_impl=backend,
+        n_initial_samples=1,
+        n_candidates=1,
+    )
+    algorithm.setup(task_spec, seed=13)
+
+    history = []
+    activations = ("relu", "gelu", "tanh")
+    for index in range(25):
+        suggestion = TrialSuggestion(
+            config={
+                "lr": 0.001 + index * 0.0001,
+                "depth": 2 + index % 7,
+                "activation": activations[index % len(activations)],
+            },
+            trial_id=index,
+        )
+        history.append(_make_observation(suggestion, index))
+    algorithm.replay(history)
+
+    suggestion = algorithm.ask()
+
+    assert suggestion.metadata["opro_prompt_pairs"] == 25
+    assert len(backend.requests) == 1
+    prompt = backend.requests[0].prompt
+    assert '"trial_id": 0' in prompt
+    assert '"trial_id": 24' in prompt
+
+
 def test_opro_branin_summary_and_resume_outputs(tmp_path: Path) -> None:
     summary = run_single_experiment(
-        task_name="branin_demo",
+        task_name="bbob_f01_d10",
         algorithm_name="opro",
         seed=7,
         max_evaluations=6,
@@ -208,7 +350,7 @@ def test_opro_branin_summary_and_resume_outputs(tmp_path: Path) -> None:
         assert Path(plot_path).exists()
 
     resumed = run_single_experiment(
-        task_name="branin_demo",
+        task_name="bbob_f01_d10",
         algorithm_name="opro",
         seed=7,
         max_evaluations=6,

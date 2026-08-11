@@ -21,7 +21,7 @@ from ...core import (
     TrialSuggestion,
 )
 from ..http_json import get_json, post_json
-from .catalog import SURROGATE_BENCHMARKS, default_knobs_json_path, resolve_bundled_joblib_path
+from .catalog import SURROGATE_BENCHMARKS, default_knobs_json_path
 from .http_surrogate_specs import (
     DBTUNE_SURROGATE_SERVICE_TASK_IDS,
     _DEFAULT_BASE_URL,
@@ -89,7 +89,7 @@ class HttpSurrogateKnobTask(Task):
         self._canonical_id = canonical_id_from_http_task_id(config.http_task_id)
         self._bench = SURROGATE_BENCHMARKS[self._canonical_id]
 
-        self._surrogate_path = resolve_bundled_joblib_path(self._bench)
+        self._surrogate_path_ref = self._resolve_host_surrogate_path_ref()
         self._knobs_path = default_knobs_json_path(self._bench)
 
         self._base_url = _resolve_base_url(config.base_url)
@@ -131,7 +131,7 @@ class HttpSurrogateKnobTask(Task):
                 "dimension": float(len(names)),
                 "canonical_task_id": self._canonical_id,
                 "http_base_url": self._base_url,
-                "surrogate_path_ref": str(self._surrogate_path.resolve()),
+                "surrogate_path_ref": self._surrogate_path_ref,
                 "knobs_json_path": str(self._knobs_path.resolve()),
                 "feature_order": list(names),
                 "problem_family": "dbtune_surrogate_service",
@@ -146,6 +146,13 @@ class HttpSurrogateKnobTask(Task):
     @property
     def spec(self) -> TaskSpec:
         return self._spec
+
+    def _resolve_host_surrogate_path_ref(self) -> str:
+        if self._bench.override_env_var:
+            value = os.environ.get(self._bench.override_env_var)
+            if value:
+                return str(Path(value).expanduser())
+        return str((Path(__file__).resolve().parent / "assets" / self._bench.default_joblib_filename).resolve())
 
     def _probe_health(self) -> None:
         try:

@@ -208,7 +208,7 @@ Agentbbo/bbo/tasks/dbtune/assets/
 ```
 
 并与表里 **文件名** 一致。否则镜像内缺模型，**部分 `knob_http_surrogate_*` 在运行时会失败**。  
-仅做 **sysbench-5 最小烟测** 时，仓库提供生成占位小模型的方式（见该 README 的 `build_placeholder_surrogate`），**不能**保证覆盖全部 6 个 HTTP surrogate 名。
+仅做显式 smoke/prototyping 任务时，仓库提供生成占位小模型的方式（见该 README 的 `build_placeholder_surrogate`）。正式 `knob_http_surrogate_*` benchmark 任务必须使用 released checkpoint，不能依赖 placeholder fallback。
 
 ### 8.2 构建与运行
 

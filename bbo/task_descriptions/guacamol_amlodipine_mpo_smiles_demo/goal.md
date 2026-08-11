@@ -1,11 +1,10 @@
 # Goal
 
-Implementation source: `bbo/tasks/scientific/guacamol_smiles.py`, `_score_mol()`.
+Maximize the GuacaMol Amlodipine MPO score.
 
-Maximize `amlodipine_mpo_score`.
+This benchmark combines the following benchmark-defined scoring components into one scalar molecule score:
 
-Optimized objective: minimize `amlodipine_mpo_loss = 1 - amlodipine_mpo_score`.
+- similarity to amlodipine using ECFP4;
+- total number of rings, with a Gaussian modifier centered at 3.
 
-Fingerprint type recorded in the task definition: `ECFP4`.
-
-The implemented score uses `_geometric_mean()` over Amlodipine ECFP4 similarity and a three-ring count modifier.
+The components are aggregated by a geometric mean. In the local loss-minimization interface, optimize `amlodipine_mpo_loss = 1 - amlodipine_mpo_score`.

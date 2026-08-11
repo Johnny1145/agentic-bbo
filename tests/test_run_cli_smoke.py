@@ -15,7 +15,7 @@ from bbo.run import run_single_experiment
 @pytest.mark.unit
 def test_run_single_experiment_writes_jsonl_and_summary(tmp_path: Path) -> None:
     summary = run_single_experiment(
-        task_name="branin_demo",
+        task_name="bbob_f01_d10",
         algorithm_name="random_search",
         seed=3,
         max_evaluations=10,
@@ -31,6 +31,13 @@ def test_run_single_experiment_writes_jsonl_and_summary(tmp_path: Path) -> None:
     data = json.loads(summary_path.read_text(encoding="utf-8"))
     assert data["trial_count"] == 10
     assert "plot_paths" not in data and "plot_paths" not in summary
+
+
+@pytest.mark.unit
+def test_cli_default_pycma_popsize_is_two() -> None:
+    args = run_module.build_arg_parser().parse_args(["--algorithm", "pycma"])
+
+    assert args.popsize == 2
 
 
 @pytest.mark.unit

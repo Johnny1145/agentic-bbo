@@ -1,9 +1,9 @@
 # Background
 
-Implementation source: `bbo/tasks/scientific/guacamol_smiles.py`, `GUACAMOL_SMILES_TASK_DEFINITIONS["guacamol_median1_smiles_demo"]`.
+This task is a GuacaMol goal-directed molecular design benchmark over valid molecular structures.
 
-Source benchmark: `guacamol.standard_benchmarks.median_camphor_menthol`.
+A candidate is represented as a SMILES string. The evaluator maps each valid molecule to a scalar GuacaMol score in [0, 1]. The benchmark objective is to find molecules with high scalar scores under the task-specific scoring function.
 
-Representation: direct SMILES string parameter named `smiles`.
+GuacaMol describes these goal-directed tasks as molecular design problems in which models generate high-scoring molecules for a predefined scoring function. Some tasks combine several molecular properties into a multi-property objective (MPO), but the benchmark still returns one scalar molecule score.
 
-Target SMILES sources: `CAMPHOR_SMILES` and `MENTHOL_SMILES` imported from `bbo/tasks/scientific/guacamol_selfies.py`.
+This description records benchmark-level information only. It does not include agent-discovered search strategies or unsupported medicinal-chemistry heuristics.

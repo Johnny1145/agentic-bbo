@@ -1,11 +1,11 @@
 # 目标
 
-实现来源：`bbo/tasks/scientific/guacamol_smiles.py`，`_score_mol()`。
+最大化 GuacaMol Fexofenadine MPO score。
 
-最大化 `fexofenadine_mpo_score`。
+该 benchmark 将以下 benchmark 定义的 scoring components 合并为一个标量分子 score：
 
-优化目标：最小化 `fexofenadine_mpo_loss = 1 - fexofenadine_mpo_score`。
+- 使用 atom-pair fingerprints (AP) 与 fexofenadine 的相似度，并在 0.8 使用 thresholded modifier；
+- TPSA，并使用中心为 90 的 MaxGaussian modifier；
+- logP，并使用中心为 4 的 MinGaussian modifier。
 
-任务定义中记录的 fingerprint type：`AP`。
-
-实现中使用 `_geometric_mean()` 计算 score。
+components 使用几何平均聚合。在本地 loss-minimization 接口中，优化 `fexofenadine_mpo_loss = 1 - fexofenadine_mpo_score`。

@@ -64,7 +64,7 @@ def test_run_single_experiment_forwards_pfns_kwargs_without_runtime_dependency(
 
     fake_task = SimpleNamespace(
         spec=SimpleNamespace(
-            name="branin_demo",
+            name="bbob_f01_d10",
             search_space=SimpleNamespace(numeric_bounds=lambda: None),
         )
     )
@@ -95,7 +95,7 @@ def test_run_single_experiment_forwards_pfns_kwargs_without_runtime_dependency(
 
         def run(self) -> object:
             return SimpleNamespace(
-                task_name="branin_demo",
+                task_name="bbob_f01_d10",
                 algorithm_name="pfns4bo",
                 seed=11,
                 n_completed=1,
@@ -113,7 +113,7 @@ def test_run_single_experiment_forwards_pfns_kwargs_without_runtime_dependency(
     monkeypatch.setattr(run_module, "Experimenter", FakeExperimenter)
 
     summary = run_single_experiment(
-        task_name="branin_demo",
+        task_name="bbob_f01_d10",
         algorithm_name="pfns4bo",
         seed=11,
         max_evaluations=5,
@@ -127,7 +127,7 @@ def test_run_single_experiment_forwards_pfns_kwargs_without_runtime_dependency(
         generate_plots=False,
     )
 
-    assert captured["task_name"] == "branin_demo"
+    assert captured["task_name"] == "bbob_f01_d10"
     assert captured["task_kwargs"] == {
         "max_evaluations": 5,
         "seed": 11,

@@ -1,11 +1,11 @@
 # 背景
 
-BBOPlace-Bench 是一个面向 chip placement 的 black-box optimization benchmark，而 chip placement 会显著影响后续的 routing、timing、power 和 area。
-论文将 macro placement 视为一个昂贵的黑盒问题：候选解需要通过 placement 工具链评估，而不是通过闭式目标函数直接计算；即使只使用 proxy metric，在真实设计上也可能有明显开销。
+这个任务是一个芯片宏单元布局优化问题。
 
-本仓库封装的任务对应 BBOPlace-Bench 中的 mask-guided optimization（MGO）形式，并通过已发布的 evaluator service 暴露出来。
-在 MGO 里，优化器先给出二维画布上的连续 macro 坐标提案，随后 evaluator 再通过 wire-mask-guided decoding，把这个提案转换成一个合法的 macro placement，同时尽量减小增量 HPWL。
-因此，这个任务更准确地说是一个“带结构的连续黑盒优化问题”，而不是“把每个 macro 直接放到指定位置”的简单 API。
+在 VLSI 芯片设计中，电路通常表示为网表：模块通过网络相连，每个可移动宏单元都有物理尺寸，并且必须放置在固定的二维芯片画布上。宏单元的位置会强烈影响后续标准单元布局、布线拥塞、时序、功耗和面积。
 
-完整的 BBOPlace-Bench 论文研究了多种问题建模、优化算法和评估指标，并覆盖 ISPD 2005、ICCAD 2015 等工业 benchmark。
-而本仓库里的 adapter 主要聚焦于 evaluator service 暴露出来的 MGO 风格 macro-placement 目标，适合作为一个现实但易接入的入口，用来比较通用 BBO 算法在芯片设计工作负载上的表现。
+优化器控制一个向量 x，它表示芯片画布上的宏单元坐标提案。在本任务使用的 MGO 形式中，x 不会被直接当作最终物理布局。相反，evaluator 会把这些坐标提案解码为合法的宏单元布局：它会把宏单元移动到有效网格位置，同时尽量最小化增量线长。
+
+返回的目标 y 是解码后宏单元布局的半周长线长（half-perimeter wirelength, HPWL）。y 越小表示布局越好。HPWL 是下游芯片质量的代理指标：它近似布线线长，但比完整全局布局或最终 PPA 指标更便宜。
+
+这是一个黑盒优化任务，因为优化器无法访问从坐标提案 x 到布局质量 y 的闭式、可微映射。最终分数由布局 evaluator 生成，该 evaluator 会执行领域相关的解码、合法性处理和线长计算。

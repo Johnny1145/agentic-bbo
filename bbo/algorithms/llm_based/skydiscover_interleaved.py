@@ -280,7 +280,6 @@ class SkydiscoverInterleavedAlgorithm(ExternalOptimizerAdapter):
         assert self._meta_context_path is not None
         task_spec = self.require_task_spec()
         meta = task_spec.metadata
-        problem_key = str(meta.get("problem_key", task_spec.name))
         payload: dict[str, object] = {
             "parameter_specs": self._parameter_specs,
             "objective_direction": task_spec.primary_objective.direction.value,
@@ -289,9 +288,12 @@ class SkydiscoverInterleavedAlgorithm(ExternalOptimizerAdapter):
             ],
             "seed": self._seed,
             "task_name": task_spec.name,
-            "problem_key": problem_key,
             "description_fingerprint": self._description.fingerprint,
         }
+        # A BBOB function ID is hidden task identity, not optimization context.
+        # Keep it out of both the agent-facing artifacts and the inner evaluator.
+        if not task_spec.name.startswith("bbob_"):
+            payload["problem_key"] = str(meta.get("problem_key", task_spec.name))
         # 中文：合成 BBO 任务在 metadata 中带有 known_optima，启用内层与主任务一致的到最优的距离评分
         known_optima = meta.get("known_optima")
         if known_optima:

@@ -4,6 +4,7 @@
 This repository now exposes a real Python package under `bbo/`.
 Top-level benchmark entrypoints live in `bbo/run.py`.
 Algorithms are grouped under `bbo/algorithms/`, tasks are grouped under `bbo/tasks/`, and reusable benchmark-agnostic abstractions live in `bbo/core/`.
+Read `agent.md` for the detailed code map, execution flow, invariants, and extension routes.
 Task descriptions live in `bbo/task_descriptions/<task_name>/`.
 Use the standardized task-description schema with required files `background.md`, `goal.md`, `constraints.md`, and `prior_knowledge.md`.
 
@@ -11,7 +12,7 @@ Use the standardized task-description schema with required files `background.md`
 - `uv sync --extra dev` creates the managed environment and installs the package in editable mode.
 - `uv run pytest` runs the current automated test suite.
 - `uv run python -m compileall -q bbo examples tests` is the quick syntax smoke test.
-- `uv run python -m bbo.run --algorithm suite --task branin_demo` runs the canonical end-to-end demo.
+- `uv run python -m bbo.run --algorithm random_search --task bbob_f01_d10 --max-evaluations 24 --no-plots` runs the canonical offline smoke test.
 
 ## Coding Style & Naming Conventions
 Use 4-space indentation, type hints, and concise docstrings on public APIs.
@@ -28,7 +29,7 @@ Name tests by behavior, for example `test_resume_replays_trials_in_order`.
 When changing the task-description logic, also verify that localized files such as `*.zh.md` are ignored by the loader.
 
 ## Commit & Pull Request Guidelines
-This checkout does not include `.git`, so there is no local history to inspect for conventions.
+Preserve the existing Git history and inspect recent commits before choosing a convention.
 Use short imperative commit subjects like `Add optimizer comparison plotter`.
 In pull requests, state whether the change touches `bbo/core/` or only task/demo layers, describe any JSONL or task-description schema impact, link related issues, and list the exact validation commands you ran.
 Include sample CLI output or plot paths only when behavior changes.

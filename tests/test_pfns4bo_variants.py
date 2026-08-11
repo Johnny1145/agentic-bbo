@@ -124,7 +124,7 @@ def test_run_single_experiment_forwards_pfns_variant_kwargs(
 
     fake_task = SimpleNamespace(
         spec=SimpleNamespace(
-            name="branin_demo",
+            name="bbob_f01_d10",
             search_space=SimpleNamespace(numeric_bounds=lambda: None),
         )
     )
@@ -152,7 +152,7 @@ def test_run_single_experiment_forwards_pfns_variant_kwargs(
 
         def run(self) -> object:
             return SimpleNamespace(
-                task_name="branin_demo",
+                task_name="bbob_f01_d10",
                 algorithm_name=algorithm_name,
                 seed=11,
                 n_completed=1,
@@ -170,7 +170,7 @@ def test_run_single_experiment_forwards_pfns_variant_kwargs(
     monkeypatch.setattr(run_module, "Experimenter", FakeExperimenter)
 
     summary = run_single_experiment(
-        task_name="branin_demo",
+        task_name="bbob_f01_d10",
         algorithm_name=algorithm_name,
         seed=11,
         max_evaluations=5,

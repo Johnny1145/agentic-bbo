@@ -1,5 +1,5 @@
 # 环境设置
 
-实现来源：`bbo/tasks/scientific/guacamol_smiles.py`，`_require_rdkit()`。
+evaluator 需要运行环境提供 RDKit-compatible 分子解析能力和 GuacaMol scoring dependencies。
 
-需要 RDKit。实现中的错误信息指向 `uv sync --extra dev --extra bo-tutorial`。
+任务描述本身不需要外部服务或任务特定的运行时资源。

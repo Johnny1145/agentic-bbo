@@ -53,6 +53,18 @@ class BBOToolRegistry:
     def get_tool_specs(self) -> list[dict[str, Any]]:
         return [self._tools[name].function_spec() for name in self.names]
 
+    async def execute_payload(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        context: BBOToolContext,
+    ) -> Any:
+        """Execute a tool and return its native payload without transport wrapping."""
+        tool = self._tools.get(tool_name)
+        if tool is None:
+            raise ValueError(f"BBO tool `{tool_name}` not found.")
+        return await tool.execute(context, **dict(arguments or {}))
+
     async def execute_tool(
         self,
         tool_name: str,
@@ -69,7 +81,7 @@ class BBOToolRegistry:
             self._log_call(tool_name, arguments, result, started, timestamp, call_id, tool_call_id, False)
             return json.dumps(result, ensure_ascii=False, sort_keys=True)
         try:
-            payload = await self._tools[tool_name].execute(context, **dict(arguments or {}))
+            payload = await self.execute_payload(tool_name, arguments, context)
             result = {"ok": True, "result": payload}
             success = True
         except Exception as exc:

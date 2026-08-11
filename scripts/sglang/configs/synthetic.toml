@@ -1,0 +1,75 @@
+family = "synthetic"
+display_name = "Synthetic"
+env_prefix = "SYNTHETIC"
+run_root_prefix = "sglang_synthetic"
+task_flag = "--task"
+default_task_selection = "all"
+default_algorithms = [
+  "opro",
+  "nanobot",
+  "sobol_search",
+  "gp_ei",
+  "botorch_turbo",
+  "random_search",
+  "optuna_tpe",
+  "pycma",
+  "llambo",
+  "pablo",
+  "agentic_openai_compatible",
+]
+default_seeds = [1]
+default_jobs = 1
+
+tasks = [
+  "bbob_f01_d10",
+  "bbob_f02_d10",
+  "bbob_f03_d10",
+  "bbob_f04_d10",
+  "bbob_f05_d10",
+  "bbob_f06_d10",
+  "bbob_f07_d10",
+  "bbob_f08_d10",
+  "bbob_f09_d10",
+  "bbob_f10_d10",
+  "bbob_f11_d10",
+  "bbob_f12_d10",
+  "bbob_f13_d10",
+  "bbob_f14_d10",
+  "bbob_f15_d10",
+  "bbob_f16_d10",
+  "bbob_f17_d10",
+  "bbob_f18_d10",
+  "bbob_f19_d10",
+  "bbob_f20_d10",
+  "bbob_f21_d10",
+  "bbob_f22_d10",
+  "bbob_f23_d10",
+  "bbob_f24_d10",
+]
+
+[generic_bbo_run]
+algorithms = [
+  "opro",
+  "nanobot",
+  "agentic_nanobot",
+  "sobol_search",
+  "sobol",
+  "gp_ei",
+  "botorch_turbo",
+  "turbo",
+  "random",
+  "random_search",
+  "optuna_tpe",
+  "pycma",
+  "cma_es",
+  "llambo",
+  "pablo",
+  "palbo",
+  "agentic_openai_compatible",
+  "openai_compatible_agent",
+]
+uv_extras = ["bo-tutorial", "nanobot", "pablo", "optuna"]
+max_evaluations_env = "SYNTHETIC_MAX_EVALUATIONS"
+max_evaluations = 120
+results_root = "{run_root}/generic"
+no_plots = true

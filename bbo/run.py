@@ -8,7 +8,20 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .algorithms import ALGORITHM_REGISTRY, OpenAICompatibleLlamboBackend, OpenAICompatibleOproBackend, create_algorithm
+from .algorithms import (
+    ALGORITHM_REGISTRY,
+    OpenAICompatibleLlamboBackend,
+    OpenAICompatibleOproBackend,
+    comparable_baseline_kwargs,
+    create_algorithm,
+)
+from .algorithms.agentic import AGENT_TOOL_MODE_CLI_CHOICES, normalize_agent_tool_mode
+from .algorithms.kimi import (
+    DEFAULT_KIMI_API_KEY_ENV,
+    DEFAULT_KIMI_BASE_URL,
+    DEFAULT_KIMI_MODEL,
+    normalize_kimi_openai_base_url,
+)
 from .core import (
     CumulativeEvalTimeComparisonPlotter,
     ExperimentConfig,
@@ -29,6 +42,36 @@ from .tasks import ALL_TASK_NAMES, create_task
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RESULTS_ROOT = PROJECT_ROOT / "runs" / "demo"
+NATIVE_HARNESS_ALGORITHM_NAMES = {
+        "agentic_bo",
+    "agentic_nanobot",
+    "nanobot",
+    "agentic_codex",
+    "codex",
+    "agentic_claude_code",
+    "claude_code",
+    "claude-code",
+}
+
+
+class BBOArgumentParser(argparse.ArgumentParser):
+    """ArgumentParser with algorithm-aware agent defaults."""
+
+    def parse_args(self, args: list[str] | None = None, namespace: argparse.Namespace | None = None) -> argparse.Namespace:
+        parsed = super().parse_args(args, namespace)
+        _apply_algorithm_aware_agent_defaults(parsed)
+        return parsed
+
+
+def _apply_algorithm_aware_agent_defaults(args: argparse.Namespace) -> None:
+    if getattr(args, "agent_tool_mode", None) is None:
+        args.agent_tool_mode = (
+            "workspace_json"
+            if getattr(args, "algorithm", None) in NATIVE_HARNESS_ALGORITHM_NAMES
+            else "function_calling"
+        )
+    else:
+        args.agent_tool_mode = normalize_agent_tool_mode(args.agent_tool_mode)
 
 
 def _sanitize_path_segment(value: str) -> str:
@@ -81,34 +124,54 @@ def _build_llambo_algorithm_kwargs(
     llambo_openai_timeout_seconds: float,
     llambo_openai_max_retries: int = 3,
     llambo_openai_use_structured_outputs: bool = True,
+    llambo_openai_include_seed: bool = True,
+    llambo_openai_include_store: bool = True,
+    kimi_api_key_env: str = DEFAULT_KIMI_API_KEY_ENV,
+    kimi_base_url: str = DEFAULT_KIMI_BASE_URL,
+    kimi_model: str = DEFAULT_KIMI_MODEL,
 ) -> dict[str, Any]:
+    is_kimi = llambo_backend == "kimi"
+    effective_model = kimi_model if is_kimi and llambo_model == "gpt-4o-mini" else llambo_model
     kwargs: dict[str, Any] = {
         "backend": llambo_backend,
-        "model": llambo_model,
+        "model": effective_model,
         "n_initial_samples": llambo_initial_samples,
         "n_candidates": llambo_candidates,
         "n_templates": llambo_templates,
         "n_predictions": llambo_predictions,
         "alpha": llambo_alpha,
     }
-    if llambo_backend != "openai":
+    if llambo_backend not in {"openai", "kimi"}:
         return kwargs
 
-    api_key = _resolve_optional_env(llambo_openai_api_key_env)
+    api_key_env = (
+        kimi_api_key_env
+        if is_kimi and llambo_openai_api_key_env == "OPENAI_API_KEY"
+        else llambo_openai_api_key_env
+    )
+    api_key = _resolve_optional_env(api_key_env)
     if not api_key:
+        provider_label = "Kimi" if is_kimi else "OpenAI"
         raise ValueError(
-            "LLAMBO OpenAI backend requires an API key in the user-facing environment. "
-            f"Set `{llambo_openai_api_key_env}` or choose `--llambo-backend heuristic`."
+            f"LLAMBO {provider_label} backend requires an API key in the user-facing environment. "
+            f"Set `{api_key_env}` or choose `--llambo-backend heuristic`."
         )
     kwargs["backend_impl"] = OpenAICompatibleLlamboBackend(
-        model=llambo_model,
+        model=effective_model,
         api_key=api_key,
-        base_url=llambo_openai_base_url or _resolve_optional_env("OPENAI_BASE_URL", "OPENAI_API_BASE"),
+        base_url=(
+            (llambo_openai_base_url or kimi_base_url)
+            if is_kimi
+            else llambo_openai_base_url or _resolve_optional_env("OPENAI_BASE_URL", "OPENAI_API_BASE")
+        ),
         organization=llambo_openai_organization or _resolve_optional_env("OPENAI_ORGANIZATION"),
         project=llambo_openai_project or _resolve_optional_env("OPENAI_PROJECT"),
         timeout_seconds=llambo_openai_timeout_seconds,
         max_retries=llambo_openai_max_retries,
         use_structured_outputs=llambo_openai_use_structured_outputs,
+        provider_name="kimi" if is_kimi else "openai",
+        include_seed=False if is_kimi else llambo_openai_include_seed,
+        include_store=False if is_kimi else llambo_openai_include_store,
     )
     return kwargs
 
@@ -119,38 +182,58 @@ def _build_opro_algorithm_kwargs(
     opro_model: str,
     opro_initial_samples: int,
     opro_candidates: int,
-    opro_prompt_pairs: int,
+    opro_prompt_pairs: int | None,
     opro_openai_api_key_env: str,
     opro_openai_base_url: str | None,
     opro_openai_organization: str | None,
     opro_openai_project: str | None,
     opro_openai_timeout_seconds: float,
     opro_openai_max_retries: int = 3,
+    opro_openai_include_seed: bool = True,
+    opro_openai_include_store: bool = True,
+    kimi_api_key_env: str = DEFAULT_KIMI_API_KEY_ENV,
+    kimi_base_url: str = DEFAULT_KIMI_BASE_URL,
+    kimi_model: str = DEFAULT_KIMI_MODEL,
 ) -> dict[str, Any]:
+    is_kimi = opro_backend == "kimi"
+    effective_model = kimi_model if is_kimi and opro_model == "gpt-4o-mini" else opro_model
     kwargs: dict[str, Any] = {
         "backend": opro_backend,
-        "model": opro_model,
+        "model": effective_model,
         "n_initial_samples": opro_initial_samples,
         "n_candidates": opro_candidates,
         "max_prompt_pairs": opro_prompt_pairs,
     }
-    if opro_backend != "openai":
+    if opro_backend not in {"openai", "kimi"}:
         return kwargs
 
-    api_key = _resolve_optional_env(opro_openai_api_key_env)
+    api_key_env = (
+        kimi_api_key_env
+        if is_kimi and opro_openai_api_key_env == "OPENAI_API_KEY"
+        else opro_openai_api_key_env
+    )
+    api_key = _resolve_optional_env(api_key_env)
     if not api_key:
+        provider_label = "Kimi" if is_kimi else "OpenAI"
         raise ValueError(
-            "OPRO OpenAI backend requires an API key in the user-facing environment. "
-            f"Set `{opro_openai_api_key_env}` or choose `--opro-backend heuristic`."
+            f"OPRO {provider_label} backend requires an API key in the user-facing environment. "
+            f"Set `{api_key_env}` or choose `--opro-backend heuristic`."
         )
     kwargs["backend_impl"] = OpenAICompatibleOproBackend(
-        model=opro_model,
+        model=effective_model,
         api_key=api_key,
-        base_url=opro_openai_base_url or _resolve_optional_env("OPENAI_BASE_URL", "OPENAI_API_BASE"),
+        base_url=(
+            (opro_openai_base_url or kimi_base_url)
+            if is_kimi
+            else opro_openai_base_url or _resolve_optional_env("OPENAI_BASE_URL", "OPENAI_API_BASE")
+        ),
         organization=opro_openai_organization or _resolve_optional_env("OPENAI_ORGANIZATION"),
         project=opro_openai_project or _resolve_optional_env("OPENAI_PROJECT"),
         timeout_seconds=opro_openai_timeout_seconds,
         max_retries=opro_openai_max_retries,
+        provider_name="kimi" if is_kimi else "openai",
+        include_seed=False if is_kimi else opro_openai_include_seed,
+        include_store=False if is_kimi else opro_openai_include_store,
     )
     return kwargs
 
@@ -165,7 +248,7 @@ def run_single_experiment(
     results_root: Path = DEFAULT_RESULTS_ROOT,
     resume: bool = False,
     sigma_fraction: float = 0.18,
-    popsize: int | None = None,
+    popsize: int | None = 2,
     noise_std: float = 0.0,
     surrogate_path: str | Path | None = None,
     knobs_json_path: str | Path | None = None,
@@ -178,6 +261,17 @@ def run_single_experiment(
     pfns_tabpfn_n_estimators: int = 8,
     pfns_tabpfn_ignore_pretraining_limits: bool = True,
     pfns_tabpfn_fit_mode: str = "fit_preprocessors",
+    gp_ei_pool_size: int | None = None,
+    gp_ei_startup_trials: int = 2,
+    gp_ei_xi: float = 0.0,
+    gp_ei_alpha: float = 1e-6,
+    gp_ei_n_restarts_optimizer: int = 0,
+    git_bo_subspace_dim: int = 10,
+    git_bo_beta: float = 2.33,
+    git_bo_n_candidates: int | None = None,
+    git_bo_n_estimators: int = 1,
+    git_bo_inference_batch_size: int = 128,
+    git_bo_device: str = "auto",
     pablo_provider: str = "mock",
     pablo_base_url: str | None = None,
     pablo_api_key_env: str = "PABLO_API_KEY",
@@ -207,36 +301,57 @@ def run_single_experiment(
     llambo_openai_timeout_seconds: float = 30.0,
     llambo_openai_max_retries: int = 3,
     llambo_openai_use_structured_outputs: bool = True,
+    llambo_openai_include_seed: bool = True,
+    llambo_openai_include_store: bool = True,
     opro_backend: str = "heuristic",
     opro_model: str = "gpt-4o-mini",
     opro_initial_samples: int = 5,
     opro_candidates: int = 8,
-    opro_prompt_pairs: int = 20,
+    opro_prompt_pairs: int | None = None,
     opro_openai_api_key_env: str = "OPENAI_API_KEY",
     opro_openai_base_url: str | None = None,
     opro_openai_organization: str | None = None,
     opro_openai_project: str | None = None,
     opro_openai_timeout_seconds: float = 30.0,
     opro_openai_max_retries: int = 3,
+    opro_openai_include_seed: bool = True,
+    opro_openai_include_store: bool = True,
+    kimi_api_key_env: str = DEFAULT_KIMI_API_KEY_ENV,
+    kimi_base_url: str = DEFAULT_KIMI_BASE_URL,
+    kimi_model: str = DEFAULT_KIMI_MODEL,
     agent_timeout_seconds: float = 180.0,
     agent_max_retries: int = 1,
     agent_history_limit: int = 40,
-    agent_candidates_per_call: int = 4,
+    agent_candidates_per_call: int = 1,
     agent_model: str | None = None,
     agent_provider: str | None = None,
     agent_api_base: str | None = None,
     agent_api_key_env: str | None = None,
+    agent_executable: str | None = None,
     agent_initial_random: int = 0,
-    agent_tool_mode: str = "function_calling",
+    agent_tool_mode: str | None = None,
+    agent_prompt_style: str = "workspace",
+    agent_prompt_profile: str | None = None,
     agent_max_tool_calls: int = 16,
     agent_enable_memory: bool = True,
     agent_enable_code_interpreter: bool = True,
     agent_code_backend: str = "sandboxfusion",
+    agent_docker_image: str = "agentic-bbo-analysis-sandbox:v1",
     sandbox_fusion_base_url: str | None = None,
     agent_web_search_provider: str = "disabled",
     agent_web_search_api_key_env: str | None = None,
     agent_allow_fallback: bool = True,
     agent_require_visible_cot: bool = False,
+    agent_enable_bbo_skills: bool = False,
+    agent_skill_paths: list[str | Path] | None = None,
+    agent_enabled_tool_names: list[str] | tuple[str, ...] | None = None,
+    agent_optimizer_backend_allowlist: list[str] | tuple[str, ...] = (),
+    agent_optimizer_max_calls_per_round: int = 3,
+    agent_experiment_condition: str = "default",
+    agent_require_analysis_evidence_per_round: bool = False,
+    agent_required_tool_names_per_round: list[str] | tuple[str, ...] = (),
+    agent_require_candidate_validation_per_round: bool = False,
+    agent_require_optimizer_decision_per_round: bool = False,
     skydiscover_interleave_every: int = 5,
     skydiscover_round_iterations: int = 3,
     skydiscover_config_path: str | Path | None = None,
@@ -259,6 +374,12 @@ def run_single_experiment(
         **resolved_task_kwargs,
     )
     _require_algorithm_support(task, algorithm_name)
+    if agent_tool_mode is None:
+        agent_tool_mode = (
+            "workspace_json" if algorithm_name in NATIVE_HARNESS_ALGORITHM_NAMES else "function_calling"
+        )
+    else:
+        agent_tool_mode = normalize_agent_tool_mode(agent_tool_mode)
     run_segments = _runs_subdirectory_name(
         algorithm_name,
         skydiscover_search_type=skydiscover_search_type,
@@ -268,7 +389,13 @@ def run_single_experiment(
 
     algorithm_kwargs: dict[str, Any] = {}
     if algorithm_name in {"pycma", "cma_es"}:
-        algorithm_kwargs = {"sigma_fraction": sigma_fraction, "popsize": popsize}
+        algorithm_kwargs = comparable_baseline_kwargs(
+            algorithm_name,
+            overrides={
+                "sigma_fraction": sigma_fraction,
+                "popsize": popsize,
+            },
+        )
     elif algorithm_name == "pfns4bo":
         algorithm_kwargs = {
             "device": pfns_device,
@@ -291,20 +418,49 @@ def run_single_experiment(
             "acquisition": pfns_acquisition,
             "model_path": pfns_custom_model_path,
         }
+    elif algorithm_name in {"gp_ei", "gpei", "gp_bo"}:
+        algorithm_kwargs = comparable_baseline_kwargs(
+            algorithm_name,
+            overrides={
+                "pool_size": gp_ei_pool_size,
+                "startup_trials": gp_ei_startup_trials,
+                "xi": gp_ei_xi,
+                "alpha": gp_ei_alpha,
+                "n_restarts_optimizer": gp_ei_n_restarts_optimizer,
+            },
+        )
+    elif algorithm_name in {"git_bo", "gitbo"}:
+        algorithm_kwargs = {
+            "subspace_dim": git_bo_subspace_dim,
+            "beta": git_bo_beta,
+            "n_candidates": git_bo_n_candidates,
+            "n_estimators": git_bo_n_estimators,
+            "inference_batch_size": git_bo_inference_batch_size,
+            "device": git_bo_device,
+        }
     elif algorithm_name in {"graph_ga", "gpbo", "graph_gpbo"}:
         algorithm_kwargs = {
             "initial_smiles_path": molecular_initial_smiles_path,
         }
     elif algorithm_name in {"pablo", "palbo"}:
+        effective_pablo_api_key_env = pablo_api_key_env
+        effective_pablo_base_url = pablo_base_url
+        effective_pablo_model = pablo_model
+        if pablo_provider == "kimi":
+            if pablo_api_key_env == "PABLO_API_KEY":
+                effective_pablo_api_key_env = kimi_api_key_env
+            effective_pablo_base_url = normalize_kimi_openai_base_url(pablo_base_url or kimi_base_url)
+            if pablo_model == "gpt-4.1-mini":
+                effective_pablo_model = kimi_model
         algorithm_kwargs = {
             "provider": pablo_provider,
-            "base_url": pablo_base_url,
-            "api_key_env": pablo_api_key_env,
+            "base_url": effective_pablo_base_url,
+            "api_key_env": effective_pablo_api_key_env,
             "global_model": pablo_global_model,
             "worker_model": pablo_worker_model,
             "planner_model": pablo_planner_model,
             "explorer_model": pablo_explorer_model,
-            "model": pablo_model,
+            "model": effective_pablo_model,
             "init_points": pablo_init_points,
             "max_fails": pablo_max_fails,
             "num_seeds": pablo_num_seeds,
@@ -316,11 +472,14 @@ def run_single_experiment(
             "resume": resume,
         }
     elif algorithm_name in {
+        "agentic_bo",
         "agentic_nanobot",
         "nanobot",
         "agentic_claude_code",
         "claude_code",
         "claude-code",
+        "agentic_codex",
+        "codex",
         "agentic_openai_compatible",
         "openai_compatible_agent",
     }:
@@ -333,10 +492,14 @@ def run_single_experiment(
             "provider": agent_provider,
             "api_base": agent_api_base,
             "api_key_env": agent_api_key_env,
+            "executable": agent_executable,
             "initial_random": agent_initial_random,
             "run_dir": run_dir,
             "resume": resume,
             "tool_mode": agent_tool_mode,
+            "docker_image": agent_docker_image,
+            "prompt_style": agent_prompt_style,
+            "prompt_profile": agent_prompt_profile,
             "max_tool_calls": agent_max_tool_calls,
             "enable_memory": agent_enable_memory,
             "enable_code_interpreter": agent_enable_code_interpreter,
@@ -346,9 +509,20 @@ def run_single_experiment(
             "web_search_api_key_env": agent_web_search_api_key_env,
             "allow_fallback": agent_allow_fallback,
             "require_visible_cot": agent_require_visible_cot,
+            "experiment_condition": agent_experiment_condition,
+            "require_analysis_evidence_per_round": agent_require_analysis_evidence_per_round,
+            "required_tool_names_per_round": agent_required_tool_names_per_round,
+            "require_candidate_validation_per_round": agent_require_candidate_validation_per_round,
+            "require_optimizer_decision_per_round": agent_require_optimizer_decision_per_round,
+            "enable_bbo_skills": agent_enable_bbo_skills,
+            "skill_paths": agent_skill_paths,
+            "enabled_tool_names": agent_enabled_tool_names,
+            "optimizer_backend_allowlist": agent_optimizer_backend_allowlist,
+            "optimizer_max_calls_per_round": agent_optimizer_max_calls_per_round,
         }
     elif algorithm_name == "llambo":
-        algorithm_kwargs = _build_llambo_algorithm_kwargs(
+        algorithm_kwargs = {"run_dir": run_dir}
+        algorithm_kwargs.update(_build_llambo_algorithm_kwargs(
             llambo_backend=llambo_backend,
             llambo_model=llambo_model,
             llambo_initial_samples=llambo_initial_samples,
@@ -363,7 +537,12 @@ def run_single_experiment(
             llambo_openai_timeout_seconds=llambo_openai_timeout_seconds,
             llambo_openai_max_retries=llambo_openai_max_retries,
             llambo_openai_use_structured_outputs=llambo_openai_use_structured_outputs,
-        )
+            llambo_openai_include_seed=llambo_openai_include_seed,
+            llambo_openai_include_store=llambo_openai_include_store,
+            kimi_api_key_env=kimi_api_key_env,
+            kimi_base_url=kimi_base_url,
+            kimi_model=kimi_model,
+        ))
     elif algorithm_name == "opro":
         algorithm_kwargs = _build_opro_algorithm_kwargs(
             opro_backend=opro_backend,
@@ -377,6 +556,11 @@ def run_single_experiment(
             opro_openai_project=opro_openai_project,
             opro_openai_timeout_seconds=opro_openai_timeout_seconds,
             opro_openai_max_retries=opro_openai_max_retries,
+            opro_openai_include_seed=opro_openai_include_seed,
+            opro_openai_include_store=opro_openai_include_store,
+            kimi_api_key_env=kimi_api_key_env,
+            kimi_base_url=kimi_base_url,
+            kimi_model=kimi_model,
         )
     elif algorithm_name in {"skydiscover_interleaved", "skydiscover_meta"}:
         algorithm_kwargs = {
@@ -444,13 +628,13 @@ def run_single_experiment(
 
 def run_demo_suite(
     *,
-    task_name: str = "branin_demo",
+    task_name: str = "bbob_f01_d10",
     seed: int = 7,
     results_root: Path = DEFAULT_RESULTS_ROOT,
     random_evaluations: int = 45,
     pycma_evaluations: int = 36,
     sigma_fraction: float = 0.18,
-    popsize: int | None = 6,
+    popsize: int | None = 2,
     resume: bool = False,
     generate_plots: bool = True,
 ) -> dict[str, Any]:
@@ -664,8 +848,8 @@ def _allocate_run_dir(base_dir: Path, *, resume: bool) -> Path:
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run tasks for the agentic BBO benchmark core.")
-    parser.add_argument("--task", default="branin_demo", choices=sorted(ALL_TASK_NAMES))
+    parser = BBOArgumentParser(description="Run tasks for the agentic BBO benchmark core.")
+    parser.add_argument("--task", default="bbob_f01_d10", choices=sorted(ALL_TASK_NAMES))
     parser.add_argument(
         "--algorithm",
         default="suite",
@@ -677,7 +861,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--random-evaluations", type=int, default=45)
     parser.add_argument("--pycma-evaluations", type=int, default=36)
     parser.add_argument("--sigma-fraction", type=float, default=0.18)
-    parser.add_argument("--popsize", type=int, default=6)
+    parser.add_argument("--popsize", type=int, default=2)
     parser.add_argument(
         "--noise-std",
         type=float,
@@ -709,12 +893,34 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=True,
     )
     parser.add_argument(
+        "--gp-ei-pool-size",
+        type=int,
+        default=None,
+        help=(
+            "Override GP-EI raw samples. By default GP-EI and TuRBO share "
+            "min(5000, max(2048, 200*d)); task benchmark protocols take precedence."
+        ),
+    )
+    parser.add_argument("--gp-ei-startup-trials", type=int, default=2)
+    parser.add_argument("--gp-ei-xi", type=float, default=0.0)
+    parser.add_argument("--gp-ei-alpha", type=float, default=1e-6)
+    parser.add_argument("--gp-ei-n-restarts-optimizer", type=int, default=0)
+    parser.add_argument("--git-bo-subspace-dim", type=int, default=10)
+    parser.add_argument("--git-bo-beta", type=float, default=2.33)
+    parser.add_argument("--git-bo-n-candidates", type=int, default=None)
+    parser.add_argument("--git-bo-n-estimators", type=int, default=1)
+    parser.add_argument("--git-bo-inference-batch-size", type=int, default=128)
+    parser.add_argument("--git-bo-device", default="auto")
+    parser.add_argument(
         "--molecular-initial-smiles-path",
         type=Path,
         default=None,
         help="SMILES file used as the explicit initial population for graph_ga/gpbo.",
     )
-    parser.add_argument("--pablo-provider", default="mock", choices=["mock", "openai-compatible"])
+    parser.add_argument("--kimi-api-key-env", default=DEFAULT_KIMI_API_KEY_ENV)
+    parser.add_argument("--kimi-base-url", default=DEFAULT_KIMI_BASE_URL)
+    parser.add_argument("--kimi-model", default=DEFAULT_KIMI_MODEL)
+    parser.add_argument("--pablo-provider", default="mock", choices=["mock", "openai-compatible", "kimi", "sglang"])
     parser.add_argument("--pablo-base-url", default=None)
     parser.add_argument("--pablo-api-key-env", default="PABLO_API_KEY")
     parser.add_argument("--pablo-global-model", default=None)
@@ -729,7 +935,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pablo-enable-explorer", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--pablo-enable-planner", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--pablo-enable-worker", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--llambo-backend", choices=["heuristic", "openai"], default="heuristic")
+    parser.add_argument("--llambo-backend", choices=["heuristic", "openai", "kimi"], default="heuristic")
     parser.add_argument("--llambo-model", default="gpt-4o-mini")
     parser.add_argument("--llambo-initial-samples", type=int, default=5)
     parser.add_argument("--llambo-candidates", type=int, default=8)
@@ -743,36 +949,80 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--llambo-openai-timeout-seconds", type=float, default=30.0)
     parser.add_argument("--llambo-openai-max-retries", type=int, default=3)
     parser.add_argument(
+        "--llambo-openai-include-seed",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Send the OpenAI seed field. Disable for compatible endpoints that reject it.",
+    )
+    parser.add_argument(
+        "--llambo-openai-include-store",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Send store=false. Disable for compatible endpoints that reject it.",
+    )
+    parser.add_argument(
         "--llambo-openai-use-structured-outputs",
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Use json_schema structured outputs if supported by the endpoint. Disable for older compatible APIs.",
     )
-    parser.add_argument("--opro-backend", choices=["heuristic", "openai"], default="heuristic")
+    parser.add_argument("--opro-backend", choices=["heuristic", "openai", "kimi"], default="heuristic")
     parser.add_argument("--opro-model", default="gpt-4o-mini")
     parser.add_argument("--opro-initial-samples", type=int, default=5)
     parser.add_argument("--opro-candidates", type=int, default=8)
-    parser.add_argument("--opro-prompt-pairs", type=int, default=20)
+    parser.add_argument(
+        "--opro-prompt-pairs",
+        type=int,
+        default=None,
+        help="Maximum successful history trials included in OPRO prompts. Default: include all.",
+    )
     parser.add_argument("--opro-openai-api-key-env", default="OPENAI_API_KEY")
     parser.add_argument("--opro-openai-base-url", default=None)
     parser.add_argument("--opro-openai-organization", default=None)
     parser.add_argument("--opro-openai-project", default=None)
     parser.add_argument("--opro-openai-timeout-seconds", type=float, default=30.0)
     parser.add_argument("--opro-openai-max-retries", type=int, default=3)
+    parser.add_argument(
+        "--opro-openai-include-seed",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Send the OpenAI seed field. Disable for compatible endpoints that reject it.",
+    )
+    parser.add_argument(
+        "--opro-openai-include-store",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Send store=false. Disable for compatible endpoints that reject it.",
+    )
     parser.add_argument("--agent-timeout-seconds", type=float, default=180.0)
     parser.add_argument("--agent-max-retries", type=int, default=1)
     parser.add_argument("--agent-history-limit", type=int, default=40)
-    parser.add_argument("--agent-candidates-per-call", type=int, default=4)
+    parser.add_argument("--agent-candidates-per-call", type=int, default=1)
     parser.add_argument("--agent-model", default=None)
     parser.add_argument("--agent-provider", default=None)
     parser.add_argument("--agent-api-base", default=None)
     parser.add_argument("--agent-api-key-env", default=None)
+    parser.add_argument(
+        "--agent-executable",
+        default=None,
+        help="Optional harness executable path (for example the Codex CLI binary).",
+    )
     parser.add_argument("--agent-initial-random", type=int, default=0)
-    parser.add_argument("--agent-tool-mode", choices=["function_calling", "workspace_json"], default="function_calling")
+    parser.add_argument(
+        "--agent-tool-mode",
+        choices=AGENT_TOOL_MODE_CLI_CHOICES,
+        default=None,
+        help=(
+            "Agent tool mode. Default: workspace_json for native Nanobot/Codex/Claude Code harnesses, "
+            "function_calling for other agentic backends."
+        ),
+    )
+    parser.add_argument("--agent-prompt-style", choices=["workspace"], default="workspace")
     parser.add_argument("--agent-max-tool-calls", type=int, default=16)
     parser.add_argument("--agent-enable-memory", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--agent-enable-code-interpreter", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--agent-code-backend", choices=["sandboxfusion", "local_disabled", "mock"], default="sandboxfusion")
+    parser.add_argument("--agent-code-backend", choices=["sandboxfusion", "restricted_docker", "local_disabled", "mock"], default="sandboxfusion")
+    parser.add_argument("--agent-docker-image", default="agentic-bbo-analysis-sandbox:v1")
     parser.add_argument("--sandbox-fusion-base-url", default=None)
     parser.add_argument(
         "--agent-web-search-provider",
@@ -782,6 +1032,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--agent-web-search-api-key-env", default=None)
     parser.add_argument("--agent-allow-fallback", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--agent-require-visible-cot", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument(
+        "--agent-enable-bbo-skills",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Copy the packaged BBO Nanobot skills into each agent workspace. Disabled by default.",
+    )
+    parser.add_argument(
+        "--agent-skill-path",
+        action="append",
+        type=Path,
+        default=None,
+        help="Additional Nanobot skill directory, or directory containing multiple skills, to copy into the agent workspace.",
+    )
     parser.add_argument("--skydiscover-interleave-every", type=int, default=5)
     parser.add_argument("--skydiscover-round-iterations", type=int, default=3)
     parser.add_argument("--skydiscover-config", type=Path, default=None)
@@ -842,6 +1105,17 @@ def main(argv: list[str] | None = None) -> int:
             pfns_tabpfn_n_estimators=args.pfns_tabpfn_n_estimators,
             pfns_tabpfn_ignore_pretraining_limits=args.pfns_tabpfn_ignore_pretraining_limits,
             pfns_tabpfn_fit_mode=args.pfns_tabpfn_fit_mode,
+            gp_ei_pool_size=args.gp_ei_pool_size,
+            gp_ei_startup_trials=args.gp_ei_startup_trials,
+            gp_ei_xi=args.gp_ei_xi,
+            gp_ei_alpha=args.gp_ei_alpha,
+            gp_ei_n_restarts_optimizer=args.gp_ei_n_restarts_optimizer,
+            git_bo_subspace_dim=args.git_bo_subspace_dim,
+            git_bo_beta=args.git_bo_beta,
+            git_bo_n_candidates=args.git_bo_n_candidates,
+            git_bo_n_estimators=args.git_bo_n_estimators,
+            git_bo_inference_batch_size=args.git_bo_inference_batch_size,
+            git_bo_device=args.git_bo_device,
             pablo_provider=args.pablo_provider,
             pablo_base_url=args.pablo_base_url,
             pablo_api_key_env=args.pablo_api_key_env,
@@ -871,6 +1145,8 @@ def main(argv: list[str] | None = None) -> int:
             llambo_openai_timeout_seconds=args.llambo_openai_timeout_seconds,
             llambo_openai_max_retries=args.llambo_openai_max_retries,
             llambo_openai_use_structured_outputs=args.llambo_openai_use_structured_outputs,
+            llambo_openai_include_seed=args.llambo_openai_include_seed,
+            llambo_openai_include_store=args.llambo_openai_include_store,
             opro_backend=args.opro_backend,
             opro_model=args.opro_model,
             opro_initial_samples=args.opro_initial_samples,
@@ -882,6 +1158,11 @@ def main(argv: list[str] | None = None) -> int:
             opro_openai_project=args.opro_openai_project,
             opro_openai_timeout_seconds=args.opro_openai_timeout_seconds,
             opro_openai_max_retries=args.opro_openai_max_retries,
+            opro_openai_include_seed=args.opro_openai_include_seed,
+            opro_openai_include_store=args.opro_openai_include_store,
+            kimi_api_key_env=args.kimi_api_key_env,
+            kimi_base_url=args.kimi_base_url,
+            kimi_model=args.kimi_model,
             agent_timeout_seconds=args.agent_timeout_seconds,
             agent_max_retries=args.agent_max_retries,
             agent_history_limit=args.agent_history_limit,
@@ -890,17 +1171,22 @@ def main(argv: list[str] | None = None) -> int:
             agent_provider=args.agent_provider,
             agent_api_base=args.agent_api_base,
             agent_api_key_env=args.agent_api_key_env,
+            agent_executable=args.agent_executable,
             agent_initial_random=args.agent_initial_random,
             agent_tool_mode=args.agent_tool_mode,
+            agent_prompt_style=args.agent_prompt_style,
             agent_max_tool_calls=args.agent_max_tool_calls,
             agent_enable_memory=args.agent_enable_memory,
             agent_enable_code_interpreter=args.agent_enable_code_interpreter,
+            agent_docker_image=args.agent_docker_image,
             agent_code_backend=args.agent_code_backend,
             sandbox_fusion_base_url=args.sandbox_fusion_base_url,
             agent_web_search_provider=args.agent_web_search_provider,
             agent_web_search_api_key_env=args.agent_web_search_api_key_env,
             agent_allow_fallback=args.agent_allow_fallback,
             agent_require_visible_cot=args.agent_require_visible_cot,
+            agent_enable_bbo_skills=args.agent_enable_bbo_skills,
+            agent_skill_paths=args.agent_skill_path,
             skydiscover_interleave_every=args.skydiscover_interleave_every,
             skydiscover_round_iterations=args.skydiscover_round_iterations,
             skydiscover_config_path=args.skydiscover_config,

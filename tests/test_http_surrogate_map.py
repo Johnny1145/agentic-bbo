@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from bbo.core import ObjectiveDirection
 from bbo.tasks.dbtune.catalog import SURROGATE_BENCHMARKS
 from bbo.tasks.dbtune.http_surrogate_specs import (
     HTTP_SURROGATE_TASK_IDS,
@@ -23,3 +24,10 @@ def test_http_surrogate_ids_cover_all_canonical() -> None:
 def test_round_trip() -> None:
     ex = "knob_surrogate_sysbench_5"
     assert canonical_id_from_http_task_id("knob_http_surrogate_sysbench_5") == ex
+
+
+def test_postgresql_job_surrogates_minimize_latency() -> None:
+    for task_id in ("knob_surrogate_pg_5", "knob_surrogate_pg_20"):
+        spec = SURROGATE_BENCHMARKS[task_id]
+        assert spec.objective_name == "latency"
+        assert spec.direction == ObjectiveDirection.MINIMIZE

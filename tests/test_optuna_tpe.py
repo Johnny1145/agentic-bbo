@@ -22,6 +22,7 @@ from bbo.core import (
     TrialSuggestion,
 )
 from bbo.run import build_arg_parser, run_single_experiment
+from bbo.tasks import create_task
 
 
 def _mixed_task_spec(*, max_evaluations: int = 8) -> TaskSpec:
@@ -128,9 +129,33 @@ def test_optuna_tpe_replay_reconstructs_mixed_history_and_next_suggestion() -> N
     assert replayed.incumbents() == algorithm.incumbents()
 
 
+def test_optuna_seed_consumes_hpo_fixed_queue_without_duplicate_prefix() -> None:
+    task = create_task("hpo_bayesmark_iris_adaboost", max_evaluations=30, seed=0)
+    algorithm = OptunaTpeAlgorithm()
+    algorithm.setup(task.spec, seed=0, task_description=task.get_description())
+    configurations = task.spec.metadata["benchmark_protocol"]["initialization"]["configurations"]
+
+    for index, config in enumerate(configurations):
+        external = TrialSuggestion(
+            trial_id=index,
+            config=dict(config),
+            metadata={"phase": "initialization"},
+        )
+        observation = TrialObservation.from_evaluation(
+            external,
+            EvaluationResult(objectives={"accuracy": 0.5 + 0.01 * index}),
+        )
+        algorithm.seed(observation)
+
+    next_suggestion = algorithm.ask()
+    assert next_suggestion.metadata["optuna_trial_number"] == 5
+    assert next_suggestion.metadata.get("benchmark_initialization") is None
+    task.cleanup()
+
+
 def test_optuna_tpe_branin_summary_and_resume_outputs(tmp_path: Path) -> None:
     summary = run_single_experiment(
-        task_name="branin_demo",
+        task_name="bbob_f01_d10",
         algorithm_name="optuna_tpe",
         seed=7,
         max_evaluations=6,
@@ -149,7 +174,7 @@ def test_optuna_tpe_branin_summary_and_resume_outputs(tmp_path: Path) -> None:
         assert Path(plot_path).exists()
 
     resumed = run_single_experiment(
-        task_name="branin_demo",
+        task_name="bbob_f01_d10",
         algorithm_name="optuna_tpe",
         seed=7,
         max_evaluations=6,

@@ -1,9 +1,9 @@
 # Constraints
 
-Implementation source: `bbo/tasks/scientific/guacamol_smiles.py`.
+A submission must provide one SMILES string as the value of `smiles`.
 
-Input parameter: `StringParam("smiles", default="", min_length=0, max_length=512)`.
+The SMILES string must be parseable as a valid molecule by RDKit. Invalid or empty SMILES strings receive the minimum score.
 
-Invalid or empty SMILES receive score `0.0` and loss `1.0`.
+The benchmark returns a scalar score in [0, 1]. In the local loss-minimization interface, the optimized loss is `1 - guacamol_score`; therefore, minimizing loss is equivalent to maximizing the GuacaMol score.
 
-The schema default role is `schema_only_not_initial_population`.
+Do not assume access to hidden scoring components unless the experiment is explicitly configured as a task-aware or grey-box setting.

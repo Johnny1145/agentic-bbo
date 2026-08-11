@@ -4,6 +4,7 @@
 现在这个仓库已经整理成一个真正的 Python 包，代码位于 `bbo/`。
 顶层 benchmark 入口在 `bbo/run.py`。
 算法按家族组织在 `bbo/algorithms/`，任务按家族组织在 `bbo/tasks/`，可复用、与具体 benchmark 无关的抽象放在 `bbo/core/`。
+详细代码地图、执行流、核心不变量和扩展路径见 `agent.md`。
 任务说明文档放在 `bbo/task_descriptions/<task_name>/`。
 每个任务应遵循统一的 task-description 规范，至少包含 `background.md`、`goal.md`、`constraints.md` 和 `prior_knowledge.md`。
 
@@ -11,7 +12,7 @@
 - `uv sync --extra dev`：创建并同步环境，以 editable 模式安装当前包。
 - `uv run pytest`：运行当前自动化测试。
 - `uv run python -m compileall -q bbo examples tests`：快速语法 smoke test。
-- `uv run python -m bbo.run --algorithm suite --task branin_demo`：运行标准端到端 demo。
+- `uv run python -m bbo.run --algorithm random_search --task bbob_f01_d10 --max-evaluations 24 --no-plots`：运行标准离线 smoke test。
 
 ## 代码风格与命名规范
 使用 4 空格缩进、类型标注，以及简洁的公开 API docstring。
@@ -28,7 +29,7 @@
 如果改动 task-description 逻辑，也要确认诸如 `*.zh.md` 这样的本地化文档不会被 loader 当作主 benchmark 上下文读入。
 
 ## Commit 与 PR 规范
-当前 checkout 不包含 `.git`，因此无法查看本地历史风格。
+保留现有 Git 历史，并在选择提交风格前查看近期 commit。
 commit message 建议使用简短祈使句，例如 `Add optimizer comparison plotter`。
 在 PR 中请说明改动是否涉及 `bbo/core/` 还是只影响 task/demo 层，说明是否影响 JSONL schema 或 task-description schema，关联相关 issue，并列出实际跑过的验证命令。
 只有在行为变化时再附上 CLI 输出或可视化产物路径。

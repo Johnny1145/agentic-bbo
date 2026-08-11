@@ -1,11 +1,10 @@
 # Goal
 
-Implementation source: `bbo/tasks/scientific/guacamol_smiles.py`, `_score_mol()`.
+Maximize the GuacaMol Zaleplon MPO score.
 
-Maximize `zaleplon_mpo_score`.
+This benchmark combines the following benchmark-defined scoring components into one scalar molecule score:
 
-Optimized objective: minimize `zaleplon_mpo_loss = 1 - zaleplon_mpo_score`.
+- similarity to zaleplon using ECFP4;
+- molecular formula matching for C19H17N3O2.
 
-Fingerprint type recorded in the task definition: `ECFP4`.
-
-The implemented score uses `_geometric_mean()` over Zaleplon ECFP4 similarity and formula modifiers.
+The components are aggregated by a geometric mean. In the local loss-minimization interface, optimize `zaleplon_mpo_loss = 1 - zaleplon_mpo_score`.

@@ -82,7 +82,7 @@ def test_load_initial_strategy_contract(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 def test_skydiscover_interleaved_smoke_without_runner(tmp_path: Path) -> None:
-    task = create_task("branin_demo", max_evaluations=6, seed=3)
+    task = create_task("bbob_f01_d10", max_evaluations=6, seed=3)
     algo = SkydiscoverInterleavedAlgorithm(
         run_dir=tmp_path,
         interleave_every=2,
@@ -104,7 +104,7 @@ def test_skydiscover_interleaved_smoke_without_runner(tmp_path: Path) -> None:
 @pytest.mark.integration
 def test_run_single_experiment_skydiscover_interleaved(tmp_path: Path) -> None:
     summary = run_single_experiment(
-        task_name="branin_demo",
+        task_name="bbob_f01_d10",
         algorithm_name="skydiscover_interleaved",
         seed=2,
         max_evaluations=4,

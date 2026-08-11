@@ -1,0 +1,49 @@
+family = "dbtune"
+display_name = "DBTune"
+env_prefix = "DBTUNE"
+run_root_prefix = "sglang_dbtune"
+task_env = "DBTUNE_TASKS"
+default_task_selection = "all"
+default_algorithms = [
+  "random_search",
+  "optuna_tpe",
+  "pycma",
+  "opro",
+  "llambo",
+  "pablo",
+  "nanobot",
+  "agentic_openai_compatible",
+]
+default_seeds = [1]
+default_families = ["surrogate"]
+sysbench_time_sec = 180
+
+[tasks_by_family]
+surrogate = [
+  "knob_http_surrogate_sysbench_5",
+  "knob_http_surrogate_sysbench_all",
+  "knob_http_surrogate_job_5",
+  "knob_http_surrogate_job_all",
+  "knob_http_surrogate_pg_5",
+  "knob_http_surrogate_pg_20",
+]
+[generic_bbo_run]
+algorithms = [
+  "random",
+  "random_search",
+  "optuna_tpe",
+  "pycma",
+  "cma_es",
+  "llambo",
+  "opro",
+  "pablo",
+  "palbo",
+  "nanobot",
+  "agentic_nanobot",
+  "agentic_openai_compatible",
+  "openai_compatible_agent",
+]
+max_evaluations_env = "DBTUNE_MAX_EVALUATIONS"
+max_evaluations = 210
+no_plots = true
+bbo_uv_extra_args = "--extra bo-tutorial --extra nanobot --extra pablo --extra optuna --extra surrogate"

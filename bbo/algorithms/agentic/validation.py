@@ -6,6 +6,7 @@ import json
 from typing import Any, Mapping
 
 from ...core import SearchSpace
+from .compact import expand_compact_xy_config
 from .serialization import stable_config_identity
 
 
@@ -54,10 +55,16 @@ def validate_candidate_payload(raw_text: str, search_space: SearchSpace) -> list
     for item in candidates:
         if not isinstance(item, Mapping):
             raise PabloValidationError("Each candidate must be a JSON object.")
-        candidate_mapping = dict(item)
-        if "config" in candidate_mapping and isinstance(candidate_mapping["config"], Mapping):
-            candidate_mapping = dict(candidate_mapping["config"])
-        config = search_space.coerce_config(candidate_mapping, use_defaults=False)
+        try:
+            candidate_mapping = dict(item)
+            if "config" in candidate_mapping and isinstance(candidate_mapping["config"], Mapping):
+                candidate_mapping = dict(candidate_mapping["config"])
+            compact_config = expand_compact_xy_config(search_space, candidate_mapping)
+            if compact_config is not None:
+                candidate_mapping = compact_config
+            config = search_space.coerce_config(candidate_mapping, use_defaults=False)
+        except (TypeError, ValueError):
+            continue
         identity = stable_config_identity(config)
         if identity in seen:
             continue

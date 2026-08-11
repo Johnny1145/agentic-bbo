@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 import sys
+import threading
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -33,6 +34,39 @@ class BBOPlaceEvaluatorKey:
 
 
 EvaluatorFactory = Callable[[Path, BBOPlaceEvaluatorKey], Any]
+
+
+class _DirectUpstreamEvaluator:
+    """Evaluate CPU-only MGO/SP points without starting a local Ray cluster."""
+
+    def __init__(self, evaluator: Any) -> None:
+        self._evaluator = evaluator
+
+    @property
+    def n_dim(self) -> int:
+        return int(self._evaluator.n_dim)
+
+    @property
+    def xl(self) -> np.ndarray:
+        return np.asarray(self._evaluator.xl)
+
+    @property
+    def xu(self) -> np.ndarray:
+        return np.asarray(self._evaluator.xu)
+
+    def evaluate(self, x: np.ndarray) -> np.ndarray:
+        matrix = np.asarray(x, dtype=float)
+        if matrix.ndim == 1:
+            matrix = matrix.reshape(1, -1)
+        hpwl = []
+        for row in matrix:
+            result, _macro_pos = self._evaluator.placer._evaluate(row)
+            hpwl.append(float(result["hpwl"]))
+        return np.asarray(hpwl, dtype=float)
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 class _MiniBenchLocalEvaluator:
@@ -143,7 +177,35 @@ def build_upstream_evaluator(upstream_root: Path, key: BBOPlaceEvaluatorKey) -> 
             seed=int(key.seed),
             **({"n_macro": int(key.n_macro)} if key.n_macro is not None else {}),
         )
-        return evaluator_cls(args)
+        ray_module = getattr(evaluator_module, "ray", None)
+        original_ray_init = getattr(ray_module, "init", None)
+        disable_ray = _env_flag("BBOPLACE_DISABLE_RAY")
+        ray_num_cpus = os.environ.get("BBOPLACE_RAY_NUM_CPUS")
+        ray_num_gpus = os.environ.get("BBOPLACE_RAY_NUM_GPUS")
+        ray_object_store_memory = os.environ.get("BBOPLACE_RAY_OBJECT_STORE_MEMORY")
+        if disable_ray and key.eval_gp_hpwl:
+            raise ValueError("BBOPLACE_DISABLE_RAY cannot be used with eval_gp_hpwl=true.")
+        if original_ray_init is not None and (
+            disable_ray or ray_num_cpus or ray_num_gpus or ray_object_store_memory
+        ):
+            def controlled_ray_init(*init_args: Any, **init_kwargs: Any) -> Any:
+                if disable_ray:
+                    return None
+                if ray_num_cpus:
+                    init_kwargs["num_cpus"] = int(ray_num_cpus)
+                if ray_num_gpus:
+                    init_kwargs["num_gpus"] = float(ray_num_gpus)
+                if ray_object_store_memory:
+                    init_kwargs["object_store_memory"] = int(ray_object_store_memory)
+                return original_ray_init(*init_args, **init_kwargs)
+
+            ray_module.init = controlled_ray_init
+        try:
+            evaluator = evaluator_cls(args)
+            return _DirectUpstreamEvaluator(evaluator) if disable_ray else evaluator
+        finally:
+            if original_ray_init is not None:
+                ray_module.init = original_ray_init
     except ImportError as exc:  # pragma: no cover - depends on external checkout.
         raise ImportError(
             "Could not import an evaluator from the upstream BBOPlace checkout. "
@@ -165,6 +227,8 @@ class BBOPlaceLocalBridge:
         self.eval_gp_hpwl = bool(eval_gp_hpwl)
         self._evaluator_factory = evaluator_factory or build_upstream_evaluator
         self._evaluators: dict[BBOPlaceEvaluatorKey, Any] = {}
+        self._cache_lock = threading.Lock()
+        self._evaluation_lock = threading.Lock()
 
     def _evaluator_for(self, *, benchmark: str, placer: str, seed: int, n_macro: int | None) -> Any:
         key = BBOPlaceEvaluatorKey(
@@ -174,10 +238,11 @@ class BBOPlaceLocalBridge:
             n_macro=int(n_macro) if n_macro is not None else None,
             eval_gp_hpwl=self.eval_gp_hpwl,
         )
-        evaluator = self._evaluators.get(key)
-        if evaluator is None:
-            evaluator = self._evaluator_factory(self.upstream_root, key)
-            self._evaluators[key] = evaluator
+        with self._cache_lock:
+            evaluator = self._evaluators.get(key)
+            if evaluator is None:
+                evaluator = self._evaluator_factory(self.upstream_root, key)
+                self._evaluators[key] = evaluator
         return evaluator
 
     def evaluate_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -205,7 +270,11 @@ class BBOPlaceLocalBridge:
         if n_macro is not None and int(n_macro) * 2 != expected_dim:
             raise ValueError(f"Payload `n_macro={n_macro}` does not match evaluator dimension {expected_dim}.")
 
-        hpwl_raw = evaluator.evaluate(matrix)
+        # Upstream evaluator objects maintain counters and temporary output
+        # paths, so concurrent HTTP requests must not mutate one bridge at once.
+        # Scale CPU throughput with multiple bridge processes/containers.
+        with self._evaluation_lock:
+            hpwl_raw = evaluator.evaluate(matrix)
         if isinstance(hpwl_raw, tuple):
             if not hpwl_raw:
                 raise ValueError("Upstream evaluator returned an empty tuple.")

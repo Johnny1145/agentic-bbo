@@ -14,6 +14,7 @@ from bbo.algorithms.agentic.tools import (
     BBOToolRegistry,
     BBOWebSourceLogger,
     CodeInterpreterTool,
+    DockerBBOCodeBackend,
     MockBBOCodeBackend,
     MockBBOWebSearchProvider,
     SerpApiBBOWebSearchProvider,
@@ -21,7 +22,9 @@ from bbo.algorithms.agentic.tools import (
     create_core_BBO_tools,
 )
 from bbo.core import Incumbent, TrialObservation, TrialStatus, TrialSuggestion, load_BBO_manifest
+from bbo.algorithms.agentic.tools import code_tools as code_tools_module
 from bbo.tasks import create_task
+from conftest import create_agent_test_task
 
 
 def _run(coro):
@@ -57,7 +60,7 @@ class SerpApiMockHandler(BaseHTTPRequestHandler):
 
 
 def _tool_context(tmp_path: Path) -> BBOToolContext:
-    task = create_task("branin_demo", max_evaluations=6, seed=3)
+    task = create_agent_test_task(max_evaluations=6, seed=3)
     description = task.get_description()
     history = [
         TrialObservation(
@@ -96,7 +99,12 @@ def test_BBO_tool_registry_specs_and_logging(tmp_path: Path) -> None:
     )
 
     specs = registry.get_tool_specs()
-    assert {spec["function"]["name"] for spec in specs} >= {"get_task_context", "validate_candidates", "memory_write"}
+    assert {spec["function"]["name"] for spec in specs} >= {
+        "get_task_context",
+        "summarize_objective_metrics",
+        "validate_candidates",
+        "memory_write",
+    }
 
     raw = _run(registry.execute_tool("get_search_space", {}, context, call_id="call-1", tool_call_id="tool-1"))
     payload = json.loads(raw)
@@ -141,6 +149,11 @@ def test_BBO_candidate_validation_sampling_and_history_analysis(tmp_path: Path) 
     assert analysis["best_trial"]["trial_id"] == 1
     assert "x1" in analysis["numeric_correlations"]
 
+    metrics = json.loads(_run(registry.execute_tool("summarize_objective_metrics", {}, context)))["result"]
+    assert metrics["primary_objective"] == "loss"
+    assert metrics["objective"]["best"] == 4.0
+    assert metrics["budget_consumed"] is False
+
 
 def test_BBO_memory_tools_are_append_only(tmp_path: Path) -> None:
     context = _tool_context(tmp_path)
@@ -181,6 +194,41 @@ def test_BBO_code_and_web_tools_use_pluggable_backends(tmp_path: Path) -> None:
     assert search_result["results"][0]["source_id"].startswith("src_")
     source_records = (tmp_path / "sources.jsonl").read_text(encoding="utf-8").strip().splitlines()
     assert json.loads(source_records[0])["kind"] == "search_result"
+
+
+def test_docker_code_backend_enforces_offline_read_only_policy(tmp_path: Path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "history.jsonl").write_text("{}\n", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    class Completed:
+        returncode = 0
+        stdout = "ok\n"
+        stderr = ""
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return Completed()
+
+    monkeypatch.setattr(code_tools_module.shutil, "which", lambda _: "/usr/bin/docker")
+    monkeypatch.setattr(code_tools_module.subprocess, "run", fake_run)
+    result = DockerBBOCodeBackend(workspace_dir=workspace).execute_blocking(
+        code="print(1)"
+    )
+    command = captured["command"]
+    assert isinstance(command, list)
+    assert command[command.index("--network") + 1] == "none"
+    assert "--read-only" in command
+    assert command[command.index("--cap-drop") + 1] == "ALL"
+    assert command[command.index("--security-opt") + 1] == "no-new-privileges"
+    assert "OPENBLAS_NUM_THREADS=1" in command
+    assert any(str(item).endswith("dst=/inputs,readonly") for item in command)
+    assert captured["kwargs"]["input"] == "print(1)"
+    assert result["status"] == "Success"
+    assert result["policy"]["network"] == "none"
+    assert result["policy"]["inputs"] == "/inputs:read_only"
 
 
 def test_SerpAPI_web_provider_calls_search_api(tmp_path: Path) -> None:

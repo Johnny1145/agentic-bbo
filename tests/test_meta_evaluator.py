@@ -85,8 +85,8 @@ def suggest_next_config(*, history, parameter_specs, objective_direction, seed, 
                 "objective_direction": "minimize",
                 "recent_history": [],
                 "seed": 1,
-                "task_name": "branin_demo",
-                "problem_key": "branin_demo",
+                "task_name": "bbob_f01_d10",
+                "problem_key": "bbob_f01_d10",
                 "description_fingerprint": "fp",
                 "meta_combined_score_mode": "distance_to_known_optimum",
                 "known_optima": [[-3.141592653589793, 12.275], [3.141592653589793, 2.275]],
@@ -124,8 +124,8 @@ def suggest_next_config(*, history, parameter_specs, objective_direction, seed, 
                 "objective_direction": "minimize",
                 "recent_history": [],
                 "seed": 2,
-                "task_name": "branin_demo",
-                "problem_key": "branin_demo",
+                "task_name": "bbob_f01_d10",
+                "problem_key": "bbob_f01_d10",
                 "description_fingerprint": "fp",
                 "meta_combined_score_mode": "distance_to_known_optimum",
                 "known_optima": [[-math.pi, 12.275]],
@@ -163,12 +163,12 @@ def suggest_next_config(*, history, parameter_specs, objective_direction, seed, 
 
 
 @pytest.mark.unit
-def test_skydiscover_interleaved_writes_distance_meta_context(tmp_path: Path) -> None:
-    """Synthetic tasks with known_optima should emit distance scoring mode for the meta evaluator."""
+def test_bbob_skydiscover_meta_context_does_not_expose_reference_solution(tmp_path: Path) -> None:
+    """BBOB uses contract scoring because xopt is intentionally hidden."""
     from bbo.algorithms import SkydiscoverInterleavedAlgorithm
     from bbo.tasks import create_task
 
-    task = create_task("branin_demo", max_evaluations=4, seed=0)
+    task = create_task("bbob_f01_d10", max_evaluations=4, seed=0)
     algo = SkydiscoverInterleavedAlgorithm(
         run_dir=tmp_path,
         interleave_every=99,
@@ -177,9 +177,9 @@ def test_skydiscover_interleaved_writes_distance_meta_context(tmp_path: Path) ->
     algo.setup(task.spec, seed=0, run_dir=tmp_path)
     algo._write_meta_context()
     data = json.loads((tmp_path / "generated" / "meta_context.json").read_text(encoding="utf-8"))
-    assert data["meta_combined_score_mode"] == "distance_to_known_optimum"
-    assert data["problem_key"] == "branin_demo"
-    assert isinstance(data["known_optima"], list)
+    assert data["meta_combined_score_mode"] == "contract"
+    assert "problem_key" not in data
+    assert "known_optima" not in data
 
 
 @pytest.mark.unit
@@ -199,8 +199,8 @@ def suggest_next_config(*, history, parameter_specs, objective_direction, seed, 
                 "objective_direction": "minimize",
                 "recent_history": [],
                 "seed": 3,
-                "task_name": "branin_demo",
-                "problem_key": "branin_demo",
+                "task_name": "bbob_f01_d10",
+                "problem_key": "bbob_f01_d10",
                 "description_fingerprint": "fp",
                 "meta_combined_score_mode": "distance_to_known_optimum",
                 "known_optima": [[0.0, 0.0]],

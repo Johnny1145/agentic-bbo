@@ -1,11 +1,12 @@
 # Goal
 
-Implementation source: `bbo/tasks/scientific/guacamol_smiles.py`, `_score_mol()`.
+Maximize the GuacaMol Valsartan SMARTS score.
 
-Maximize `valsartan_smarts_score`.
+This benchmark combines the following benchmark-defined scoring components into one scalar molecule score:
 
-Optimized objective: minimize `valsartan_smarts_loss = 1 - valsartan_smarts_score`.
+- presence of a valsartan-related SMARTS pattern;
+- logP, with a Gaussian modifier centered at 2.0165;
+- TPSA, with a Gaussian modifier centered at 77.04;
+- Bertz complexity, with a Gaussian modifier centered at 896.38.
 
-Fingerprint type recorded in the task definition: `none`.
-
-The implemented score uses `_geometric_mean()` over the Valsartan SMARTS match, logP, TPSA, and Bertz complexity modifiers.
+The components are aggregated by a geometric mean. In the local loss-minimization interface, optimize `valsartan_smarts_loss = 1 - valsartan_smarts_score`.

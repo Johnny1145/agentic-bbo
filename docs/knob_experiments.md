@@ -15,7 +15,7 @@
 
 - **Python 环境**：推荐用仓库管理的环境（`uv`）
 - **surrogate 依赖**：环境里必须有 `joblib`、`scikit-learn`
-- **模型 checkpoint**：需要一个可用的 `*.joblib`（Sysbench-5 支持仓库自带的 placeholder）
+- **模型 checkpoint**：正式 benchmark 需要对应 released `*.joblib`；placeholder 只允许用于单独命名的 smoke/prototyping 任务
 
 用 `uv` 安装（推荐）：
 
@@ -163,4 +163,3 @@ uv run python -m bbo.run --task knob_http_surrogate_sysbench_5 --algorithm rando
   - 安装 surrogate 依赖：`uv sync --extra surrogate`
 - **使用 `--algorithm pycma` 时提示 `ModuleNotFoundError: cma`**
   - 你需要先在环境里安装 `cma` 依赖，然后再使用 `pycma`。
-

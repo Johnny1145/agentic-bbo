@@ -22,8 +22,7 @@ English version: `bbo/core/IMPLEMENTATION_PLAN.md`
 
 参考任务放在 `bbo/core/` 之外的 `bbo/tasks/`：
 
-- `branin_demo`
-- `sphere_demo`
+- `bbob_f01_d10` 到 `bbob_f24_d10`（官方 COCO/BBOB，10 维）
 
 参考算法放在 `bbo/core/` 之外的 `bbo/algorithms/`：
 

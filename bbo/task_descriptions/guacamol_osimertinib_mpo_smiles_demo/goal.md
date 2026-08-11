@@ -1,11 +1,12 @@
 # Goal
 
-Implementation source: `bbo/tasks/scientific/guacamol_smiles.py`, `_score_mol()`.
+Maximize the GuacaMol Osimertinib MPO score.
 
-Maximize `osimertinib_mpo_score`.
+This benchmark combines the following benchmark-defined scoring components into one scalar molecule score:
 
-Optimized objective: minimize `osimertinib_mpo_loss = 1 - osimertinib_mpo_score`.
+- similarity to osimertinib using FCFP4, with a thresholded modifier at 0.8;
+- similarity to osimertinib using ECFP6, with a MinGaussian modifier centered at 0.85;
+- TPSA, with a MaxGaussian modifier centered at 100;
+- logP, with a MinGaussian modifier centered at 1.
 
-Fingerprint type recorded in the task definition: `FCFP4, ECFP6`.
-
-The implemented score uses `_geometric_mean()` over Osimertinib FCFP4 similarity, ECFP6 dissimilarity, TPSA, and logP modifiers.
+The components are aggregated by a geometric mean. In the local loss-minimization interface, optimize `osimertinib_mpo_loss = 1 - osimertinib_mpo_score`.

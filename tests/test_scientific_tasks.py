@@ -10,27 +10,15 @@ from bbo.run import run_single_experiment
 from bbo.tasks import (
     ALL_TASK_NAMES,
     BH_TASK_NAME,
-    GUACAMOL_QED_TASK_NAME,
     GUACAMOL_AMLODIPINE_MPO_SMILES_TASK_NAME,
-    GUACAMOL_ARIPIPRAZOLE_SIMILARITY_TASK_NAME,
-    GUACAMOL_CELECOXIB_REDISCOVERY_TASK_NAME,
-    GUACAMOL_FEXOFENADINE_MPO_TASK_NAME,
-    GUACAMOL_MEDIAN1_TASK_NAME,
+    GUACAMOL_FEXOFENADINE_MPO_SMILES_TASK_NAME,
+    GUACAMOL_MEDIAN1_SMILES_TASK_NAME,
     GUACAMOL_MEDIAN2_SMILES_TASK_NAME,
     GUACAMOL_OSIMERTINIB_MPO_SMILES_TASK_NAME,
     GUACAMOL_PERINDOPRIL_MPO_SMILES_TASK_NAME,
-    GUACAMOL_QED_SELFIES_TASK_NAME,
-    GUACAMOL_QED_SMILES_TASK_NAME,
     GUACAMOL_RANOLAZINE_MPO_SMILES_TASK_NAME,
-    GUACAMOL_SELFIES_TASK_NAMES,
     GUACAMOL_SITAGLIPTIN_MPO_SMILES_TASK_NAME,
     GUACAMOL_SMILES_TASK_NAMES,
-    GUACAMOL_ARIPIPRAZOLE_SIMILARITY_SMILES_TASK_NAME,
-    GUACAMOL_CELECOXIB_REDISCOVERY_SMILES_TASK_NAME,
-    GUACAMOL_FEXOFENADINE_MPO_SMILES_TASK_NAME,
-    GUACAMOL_MEDIAN1_SMILES_TASK_NAME,
-    GUACAMOL_TROGLITAZONE_REDISCOVERY_SMILES_TASK_NAME,
-    GUACAMOL_TROGLITAZONE_REDISCOVERY_TASK_NAME,
     GUACAMOL_VALSARTAN_SMARTS_SMILES_TASK_NAME,
     GUACAMOL_ZALEPLON_MPO_SMILES_TASK_NAME,
     HEA_TASK_NAME,
@@ -41,9 +29,7 @@ from bbo.tasks import (
     OER_TASK_NAME,
     QED_SELFIES_TASK_NAME,
     create_bh_task,
-    create_guacamol_selfies_task,
     create_guacamol_smiles_task,
-    create_guacamol_qed_task,
     create_hea_task,
     create_her_task,
     create_molecule_similarity_task,
@@ -52,7 +38,6 @@ from bbo.tasks import (
     create_qed_selfies_task,
 )
 from bbo.tasks.scientific import CACHE_ROOT_ENV, SOURCE_ROOT_ENV, VENDORED_SOURCE_ROOT
-from bbo.tasks.scientific.guacamol_selfies import CELECOXIB_SMILES
 from bbo.tasks.scientific.guacamol_smiles import (
     AMLODIPINE_SMILES,
     OSIMERTINIB_SMILES,
@@ -87,17 +72,6 @@ def test_scientific_registry_contains_all_tasks() -> None:
     assert HEA_TASK_NAME in ALL_TASK_NAMES
     assert OER_TASK_NAME in ALL_TASK_NAMES
     assert BH_TASK_NAME in ALL_TASK_NAMES
-    assert GUACAMOL_QED_TASK_NAME in ALL_TASK_NAMES
-    assert GUACAMOL_QED_SELFIES_TASK_NAME in ALL_TASK_NAMES
-    assert GUACAMOL_CELECOXIB_REDISCOVERY_TASK_NAME in ALL_TASK_NAMES
-    assert GUACAMOL_TROGLITAZONE_REDISCOVERY_TASK_NAME in ALL_TASK_NAMES
-    assert GUACAMOL_ARIPIPRAZOLE_SIMILARITY_TASK_NAME in ALL_TASK_NAMES
-    assert GUACAMOL_FEXOFENADINE_MPO_TASK_NAME in ALL_TASK_NAMES
-    assert GUACAMOL_MEDIAN1_TASK_NAME in ALL_TASK_NAMES
-    assert GUACAMOL_QED_SMILES_TASK_NAME in ALL_TASK_NAMES
-    assert GUACAMOL_CELECOXIB_REDISCOVERY_SMILES_TASK_NAME in ALL_TASK_NAMES
-    assert GUACAMOL_TROGLITAZONE_REDISCOVERY_SMILES_TASK_NAME in ALL_TASK_NAMES
-    assert GUACAMOL_ARIPIPRAZOLE_SIMILARITY_SMILES_TASK_NAME in ALL_TASK_NAMES
     assert GUACAMOL_FEXOFENADINE_MPO_SMILES_TASK_NAME in ALL_TASK_NAMES
     assert GUACAMOL_MEDIAN1_SMILES_TASK_NAME in ALL_TASK_NAMES
     assert GUACAMOL_AMLODIPINE_MPO_SMILES_TASK_NAME in ALL_TASK_NAMES
@@ -111,6 +85,21 @@ def test_scientific_registry_contains_all_tasks() -> None:
     assert MOLECULE_TASK_NAME in ALL_TASK_NAMES
     assert QED_SELFIES_TASK_NAME in ALL_TASK_NAMES
     assert MOLECULE_SIMILARITY_TASK_NAME in ALL_TASK_NAMES
+
+    removed_guacamol_tasks = {
+        "guacamol_aripiprazole_similarity_demo",
+        "guacamol_aripiprazole_similarity_smiles_demo",
+        "guacamol_celecoxib_rediscovery_demo",
+        "guacamol_celecoxib_rediscovery_smiles_demo",
+        "guacamol_fexofenadine_mpo_demo",
+        "guacamol_median1_demo",
+        "guacamol_qed_demo",
+        "guacamol_qed_selfies_demo",
+        "guacamol_qed_smiles_demo",
+        "guacamol_troglitazone_rediscovery_demo",
+        "guacamol_troglitazone_rediscovery_smiles_demo",
+    }
+    assert removed_guacamol_tasks.isdisjoint(ALL_TASK_NAMES)
 
 
 def test_her_task_spec_and_sanity(scientific_env: Path) -> None:
@@ -271,54 +260,6 @@ def test_molecule_similarity_task_sanity(tmp_path: Path) -> None:
     assert ethanol.metadata["smiles"]
 
 
-def test_guacamol_qed_task_sanity() -> None:
-    pytest.importorskip("rdkit")
-    task = create_guacamol_qed_task(max_evaluations=3, seed=23)
-    report = task.sanity_check()
-
-    assert report.ok
-    assert task.spec.name == GUACAMOL_QED_TASK_NAME
-    assert task.spec.primary_objective.name == "guacamol_qed_loss"
-    assert report.metadata["candidate_pool_size"] > 0
-    assert report.metadata["valid_candidate_count"] > 0
-
-    result = task.evaluate(TrialSuggestion(config=task.spec.search_space.defaults()))
-    assert result.success
-    assert 0.0 <= result.objectives["guacamol_qed_loss"] <= 1.0
-    assert 0.0 <= result.metrics["guacamol_qed_score"] <= 1.0
-
-
-@pytest.mark.parametrize("task_name", GUACAMOL_SELFIES_TASK_NAMES)
-def test_guacamol_selfies_task_sanity(task_name: str, tmp_path: Path) -> None:
-    pytest.importorskip("rdkit")
-    pytest.importorskip("selfies")
-    source_root = _require_bo_tutorial_source()
-    task = create_guacamol_selfies_task(
-        task_name,
-        max_evaluations=3,
-        seed=29,
-        source_root=source_root,
-        cache_root=tmp_path / "dataset_cache",
-        max_selfies_tokens=16,
-        vocabulary_source_limit=64,
-    )
-    report = task.sanity_check()
-
-    assert report.ok
-    assert task.spec.name == task_name
-    assert task.spec.primary_objective.name.endswith("_loss")
-    assert report.metadata["source_item_count"] > 0
-    assert report.metadata["selfies_vocabulary_size"] > 0
-    assert task.spec.search_space.names()[0] == "selfies_token_00"
-
-    result = task.evaluate(TrialSuggestion(config=task.spec.search_space.defaults()))
-    assert result.success
-    assert result.metadata["valid_smiles"]
-    objective = result.objectives[task.spec.primary_objective.name]
-    assert 0.0 <= objective <= 1.0
-    assert 0.0 <= result.metrics["guacamol_score"] <= 1.0
-
-
 @pytest.mark.parametrize("task_name", GUACAMOL_SMILES_TASK_NAMES)
 def test_guacamol_smiles_task_sanity(task_name: str) -> None:
     pytest.importorskip("rdkit")
@@ -337,7 +278,7 @@ def test_guacamol_smiles_task_sanity(task_name: str) -> None:
     assert default_result.metrics["guacamol_score"] == 0.0
     assert default_result.objectives[task.spec.primary_objective.name] == 1.0
 
-    valid_smiles = task.dataset_summary["target_smiles"][0] if task.dataset_summary["target_smiles"] else CELECOXIB_SMILES
+    valid_smiles = task.dataset_summary["target_smiles"][0]
     valid_result = task.evaluate(TrialSuggestion(config=task.config_from_smiles(valid_smiles)))
     assert valid_result.success
     assert valid_result.metadata["valid_smiles"] is True
@@ -355,7 +296,7 @@ def test_guacamol_smiles_rejects_generic_random_search(tmp_path: Path) -> None:
     pytest.importorskip("rdkit")
     with pytest.raises(RuntimeError, match="failed during ask") as exc_info:
         run_single_experiment(
-            task_name=GUACAMOL_QED_SMILES_TASK_NAME,
+            task_name=GUACAMOL_AMLODIPINE_MPO_SMILES_TASK_NAME,
             algorithm_name="random_search",
             seed=5,
             max_evaluations=1,
@@ -370,21 +311,6 @@ def test_guacamol_smiles_rejects_generic_random_search(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("task_name", "smiles", "expected_score"),
     [
-        (
-            GUACAMOL_CELECOXIB_REDISCOVERY_SMILES_TASK_NAME,
-            "Cc1ccc(C=Nc2ccc(S(N)(=O)=O)cc2)cc1",
-            0.4588235294117647,
-        ),
-        (
-            GUACAMOL_TROGLITAZONE_REDISCOVERY_SMILES_TASK_NAME,
-            "Cc1c(C)c2c(c(C)c1O)CCC(C)(C(=O)NCOc1ccc(O)cc1)O2",
-            0.5094339622641509,
-        ),
-        (
-            GUACAMOL_ARIPIPRAZOLE_SIMILARITY_SMILES_TASK_NAME,
-            "O=C1NCc2ccc(OCCCCN3CCN(c4cccc(Cl)c4Cl)CC3)cc2O1",
-            0.9866666666666666,
-        ),
         (
             GUACAMOL_FEXOFENADINE_MPO_SMILES_TASK_NAME,
             "COC(=O)C1=CC(F)=CC=S1NC(=O)COCC(O)N1CCC(C(c2ccccc2)c2ccccc2)CC1",
@@ -521,7 +447,6 @@ def test_qed_selfies_optuna_smoke(tmp_path: Path) -> None:
     assert summary["best_primary_objective"] is not None
     assert Path(summary["results_jsonl"]).exists()
 
-
 def test_qed_selfies_random_search_smoke(tmp_path: Path) -> None:
     pytest.importorskip("rdkit")
     pytest.importorskip("selfies")
@@ -560,53 +485,6 @@ def test_molecule_similarity_random_search_smoke(tmp_path: Path) -> None:
             "source_root": source_root,
             "cache_root": tmp_path / "dataset_cache",
             "max_selfies_tokens": 8,
-            "vocabulary_source_limit": 64,
-        },
-        results_root=tmp_path,
-        resume=False,
-        generate_plots=False,
-    )
-
-    assert summary["trial_count"] == 3
-    assert summary["best_primary_objective"] is not None
-    assert Path(summary["results_jsonl"]).exists()
-
-
-def test_guacamol_qed_random_search_smoke(tmp_path: Path) -> None:
-    pytest.importorskip("rdkit")
-    summary = run_single_experiment(
-        task_name=GUACAMOL_QED_TASK_NAME,
-        algorithm_name="random_search",
-        seed=5,
-        max_evaluations=3,
-        results_root=tmp_path,
-        resume=False,
-    )
-
-    assert summary["trial_count"] == 3
-    assert summary["best_primary_objective"] is not None
-    assert Path(summary["results_jsonl"]).exists()
-    assert len(summary["plot_paths"]) == 4
-    for plot_path in summary["plot_paths"]:
-        path = Path(plot_path)
-        assert path.exists()
-        assert path.stat().st_size > 0
-
-
-@pytest.mark.parametrize("task_name", GUACAMOL_SELFIES_TASK_NAMES)
-def test_guacamol_selfies_random_search_smoke(task_name: str, tmp_path: Path) -> None:
-    pytest.importorskip("rdkit")
-    pytest.importorskip("selfies")
-    source_root = _require_bo_tutorial_source()
-    summary = run_single_experiment(
-        task_name=task_name,
-        algorithm_name="random_search",
-        seed=5,
-        max_evaluations=3,
-        task_kwargs={
-            "source_root": source_root,
-            "cache_root": tmp_path / "dataset_cache",
-            "max_selfies_tokens": 16,
             "vocabulary_source_limit": 64,
         },
         results_root=tmp_path,

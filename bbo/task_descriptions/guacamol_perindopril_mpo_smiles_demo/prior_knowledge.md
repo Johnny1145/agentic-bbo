@@ -1,5 +1,5 @@
 # Domain Prior Knowledge
 
-No additional task-specific prior is added here.
+This is one of GuacaMol's drug-related multi-property objective benchmarks. The benchmark-defined reference molecule is perindopril.
 
-Use only the source benchmark, target SMILES or SMARTS, fingerprint type, metric name, and scoring implementation recorded in `bbo/tasks/scientific/guacamol_smiles.py`.
+The score is a scalarized combination of perindopril similarity and an aromatic-ring-count term. The task description should not add molecule-editing advice beyond these benchmark-defined components.

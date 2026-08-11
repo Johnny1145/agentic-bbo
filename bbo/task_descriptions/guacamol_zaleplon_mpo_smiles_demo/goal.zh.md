@@ -1,11 +1,10 @@
 # 目标
 
-实现来源：`bbo/tasks/scientific/guacamol_smiles.py`，`_score_mol()`。
+最大化 GuacaMol Zaleplon MPO score。
 
-最大化 `zaleplon_mpo_score`。
+该 benchmark 将以下 benchmark 定义的 scoring components 合并为一个标量分子 score：
 
-优化目标：最小化 `zaleplon_mpo_loss = 1 - zaleplon_mpo_score`。
+- 使用 ECFP4 与 zaleplon 的相似度；
+- C19H17N3O2 分子式匹配。
 
-任务定义中记录的 fingerprint type：`ECFP4`。
-
-实现中使用 `_geometric_mean()`，合并 Zaleplon ECFP4 相似度和分子式 modifier。
+components 使用几何平均聚合。在本地 loss-minimization 接口中，优化 `zaleplon_mpo_loss = 1 - zaleplon_mpo_score`。

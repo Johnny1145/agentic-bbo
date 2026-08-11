@@ -8,7 +8,7 @@ from bbo.run import run_single_experiment
 
 def test_run_single_experiment_generates_plots(tmp_path: Path) -> None:
     summary = run_single_experiment(
-        task_name="branin_demo",
+        task_name="bbob_f01_d10",
         algorithm_name="random_search",
         seed=3,
         max_evaluations=10,

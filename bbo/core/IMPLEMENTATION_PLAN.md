@@ -22,8 +22,7 @@ It is intentionally narrow and currently targets serial black-box optimization w
 
 Reference tasks live outside `bbo/core/` in `bbo/tasks/`:
 
-- `branin_demo`
-- `sphere_demo`
+- `bbob_f01_d10` through `bbob_f24_d10` (official COCO/BBOB, 10D)
 
 Reference algorithms live outside `bbo/core/` in `bbo/algorithms/`:
 

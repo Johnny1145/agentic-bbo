@@ -2,6 +2,7 @@
 
 from .agentic import (
     ClaudeCodeBBOAlgorithm,
+    CodexBBOAlgorithm,
     GeneralAgentBBOAlgorithm,
     NanobotBBOAlgorithm,
     OpenAICompatibleBBOAlgorithm,
@@ -18,17 +19,36 @@ from .llm_based import (
     OproBackend,
 )
 from .llm_based.skydiscover_interleaved import SkydiscoverInterleavedAlgorithm
-from .model_based import CustomPfnsBoAlgorithm, OptunaTpeAlgorithm, Pfns4BoAlgorithm, TabPfnV2BoAlgorithm
+from .model_based import (
+    BotorchTurboAlgorithm,
+    CustomPfnsBoAlgorithm,
+    GitBoAlgorithm,
+    GpEiAlgorithm,
+    OptunaTpeAlgorithm,
+    Pfns4BoAlgorithm,
+    TabPfnV2BoAlgorithm,
+)
 from .molecular import GraphGAAlgorithm, GraphGPBOAlgorithm
 from .registry import ALGORITHM_REGISTRY, AlgorithmSpec, algorithms_by_family, create_algorithm
-from .traditional import PyCmaAlgorithm, RandomSearchAlgorithm
+from .baseline_factory import (
+    COMPARABLE_BASELINE_BACKENDS,
+    COMPARABLE_BASELINE_DEFAULTS,
+    comparable_baseline_kwargs,
+    create_comparable_baseline,
+    normalize_comparable_backend,
+)
+from .traditional import PyCmaAlgorithm, RandomSearchAlgorithm, SobolSearchAlgorithm
 
 __all__ = [
     "ALGORITHM_REGISTRY",
     "AlgorithmSpec",
     "ClaudeCodeBBOAlgorithm",
+    "CodexBBOAlgorithm",
+    "BotorchTurboAlgorithm",
     "CustomPfnsBoAlgorithm",
     "GeneralAgentBBOAlgorithm",
+    "GitBoAlgorithm",
+    "GpEiAlgorithm",
     "GraphGAAlgorithm",
     "GraphGPBOAlgorithm",
     "HeuristicLlamboBackend",
@@ -46,8 +66,14 @@ __all__ = [
     "Pfns4BoAlgorithm",
     "PyCmaAlgorithm",
     "RandomSearchAlgorithm",
+    "SobolSearchAlgorithm",
     "SkydiscoverInterleavedAlgorithm",
     "TabPfnV2BoAlgorithm",
     "algorithms_by_family",
     "create_algorithm",
+    "COMPARABLE_BASELINE_BACKENDS",
+    "COMPARABLE_BASELINE_DEFAULTS",
+    "comparable_baseline_kwargs",
+    "create_comparable_baseline",
+    "normalize_comparable_backend",
 ]

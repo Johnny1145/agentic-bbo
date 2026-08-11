@@ -69,6 +69,8 @@ def test_llambo_is_registered_and_cli_visible() -> None:
     assert ALGORITHM_REGISTRY["llambo"].numeric_only is False
     assert "llambo" in algorithm_action.choices
     assert parser.parse_args(["--algorithm", "llambo"]).algorithm == "llambo"
+    kimi_parsed = parser.parse_args(["--algorithm", "llambo", "--llambo-backend", "kimi"])
+    assert kimi_parsed.llambo_backend == "kimi"
     parsed = parser.parse_args(
         [
             "--algorithm",
@@ -81,12 +83,16 @@ def test_llambo_is_registered_and_cli_visible() -> None:
             "https://api.openai.com/v1",
             "--llambo-openai-timeout-seconds",
             "12.5",
+            "--no-llambo-openai-include-seed",
+            "--no-llambo-openai-include-store",
         ]
     )
     assert parsed.llambo_backend == "openai"
     assert parsed.llambo_openai_api_key_env == "LLAMBO_TEST_KEY"
     assert parsed.llambo_openai_base_url == "https://api.openai.com/v1"
     assert parsed.llambo_openai_timeout_seconds == pytest.approx(12.5)
+    assert parsed.llambo_openai_include_seed is False
+    assert parsed.llambo_openai_include_store is False
 
 
 def test_llambo_openai_backend_must_be_injected_from_runner_layer() -> None:
@@ -116,8 +122,18 @@ def test_llambo_runner_builds_online_backend_and_backend_uses_structured_outputs
     queued_payloads = [
         {
             "choices": [
-                {"message": {"content": json.dumps({"lr": 0.02, "depth": 5, "activation": "gelu"})}},
-                {"message": {"content": json.dumps({"lr": 0.03, "depth": 6, "activation": "relu"})}},
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "candidates": [
+                                    {"lr": 0.02, "depth": 5, "activation": "gelu"},
+                                    {"lr": 0.03, "depth": 6, "activation": "relu"},
+                                ]
+                            }
+                        )
+                    }
+                },
             ]
         },
         {
@@ -172,8 +188,7 @@ def test_llambo_runner_builds_online_backend_and_backend_uses_structured_outputs
     )
     candidate_texts = backend.generate_candidate_texts(candidate_request)
     assert candidate_texts == [
-        '<candidate>{"lr":0.02,"depth":5,"activation":"gelu"}</candidate>',
-        '<candidate>{"lr":0.03,"depth":6,"activation":"relu"}</candidate>',
+        '{"candidates":[{"lr":0.02,"depth":5,"activation":"gelu"},{"lr":0.03,"depth":6,"activation":"relu"}]}',
     ]
 
     score_request = ScorePredictionRequest(
@@ -194,8 +209,8 @@ def test_llambo_runner_builds_online_backend_and_backend_uses_structured_outputs
     )
     score_texts = backend.generate_score_texts(score_request)
     assert score_texts == [
-        "<score>4.12500000</score>",
-        "<score>4.00000000</score>",
+        '{"predicted_objective":4.125}',
+        '{"predicted_objective":4.0}',
     ]
 
     candidate_call = captured_requests[0]
@@ -205,6 +220,8 @@ def test_llambo_runner_builds_online_backend_and_backend_uses_structured_outputs
     assert candidate_headers["openai-organization"] == "org-test"
     assert candidate_headers["openai-project"] == "proj-test"
     assert candidate_call["body"]["response_format"]["json_schema"]["strict"] is True
+    candidate_schema = candidate_call["body"]["response_format"]["json_schema"]["schema"]
+    assert candidate_schema["properties"]["candidates"]["minItems"] == 2
     assert candidate_call["body"]["store"] is False
 
     score_call = captured_requests[1]
@@ -270,6 +287,81 @@ def test_llambo_openai_fallback_to_plain_text_when_json_schema_rejected(monkeypa
     assert "response_format" not in captured_requests[1]["body"]
 
 
+def test_llambo_runner_builds_kimi_backend_without_openai_only_params(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("KIMI_TEST_KEY", "sk-test")
+    captured_requests: list[dict[str, Any]] = []
+
+    def _fake_urlopen(request, timeout: float):
+        captured_requests.append(
+            {
+                "url": request.full_url,
+                "headers": dict(request.header_items()),
+                "body": json.loads(request.data.decode("utf-8")),
+            }
+        )
+        return _FakeHttpResponse(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {"candidates": [{"lr": 0.02, "depth": 5, "activation": "gelu"}]}
+                            )
+                        }
+                    },
+                ]
+            }
+        )
+
+    monkeypatch.setattr("bbo.algorithms.llm_based.llambo.urllib_request.urlopen", _fake_urlopen)
+
+    kwargs = _build_llambo_algorithm_kwargs(
+        llambo_backend="kimi",
+        llambo_model="gpt-4o-mini",
+        llambo_initial_samples=3,
+        llambo_candidates=1,
+        llambo_templates=1,
+        llambo_predictions=1,
+        llambo_alpha=-0.1,
+        llambo_openai_api_key_env="OPENAI_API_KEY",
+        llambo_openai_base_url=None,
+        llambo_openai_organization=None,
+        llambo_openai_project=None,
+        llambo_openai_timeout_seconds=12.5,
+        kimi_api_key_env="KIMI_TEST_KEY",
+        kimi_base_url="https://api.kimi.com/coding/",
+        kimi_model="kimi-for-coding",
+    )
+    backend = kwargs["backend_impl"]
+    assert isinstance(backend, OpenAICompatibleLlamboBackend)
+    assert kwargs["model"] == "kimi-for-coding"
+    assert backend.name == "kimi"
+
+    search_space = _mixed_task_spec().search_space
+    candidate_request = CandidateGenerationRequest(
+        prompt="Recommend a candidate configuration.",
+        n_responses=1,
+        seed=11,
+        objective_direction=ObjectiveDirection.MINIMIZE,
+        search_space=search_space,
+        observed_points=(),
+        desired_score=1.0,
+        parameter_order=tuple(search_space.names()),
+    )
+    texts = backend.generate_candidate_texts(candidate_request)
+    assert texts == ['{"candidates":[{"lr":0.02,"depth":5,"activation":"gelu"}]}']
+
+    call = captured_requests[0]
+    call_headers = {key.lower(): value for key, value in call["headers"].items()}
+    assert call["url"] == "https://api.kimi.com/coding/v1/chat/completions"
+    assert call_headers["authorization"] == "Bearer sk-test"
+    assert call["body"]["model"] == "kimi-for-coding"
+    assert call["body"]["messages"][1]["content"] == "Recommend a candidate configuration."
+    assert call["body"]["response_format"]["json_schema"]["name"] == "llambo_candidate"
+    assert "seed" not in call["body"]
+    assert "store" not in call["body"]
+
+
 def test_llambo_replay_reconstructs_next_suggestion_for_mixed_space() -> None:
     task_spec = _mixed_task_spec(max_evaluations=6)
     algorithm = LlamboAlgorithm(
@@ -306,7 +398,7 @@ def test_llambo_replay_reconstructs_next_suggestion_for_mixed_space() -> None:
 
 def test_llambo_branin_summary_and_resume_outputs(tmp_path: Path) -> None:
     summary = run_single_experiment(
-        task_name="branin_demo",
+        task_name="bbob_f01_d10",
         algorithm_name="llambo",
         seed=7,
         max_evaluations=6,
@@ -331,7 +423,7 @@ def test_llambo_branin_summary_and_resume_outputs(tmp_path: Path) -> None:
         assert Path(plot_path).exists()
 
     resumed = run_single_experiment(
-        task_name="branin_demo",
+        task_name="bbob_f01_d10",
         algorithm_name="llambo",
         seed=7,
         max_evaluations=6,

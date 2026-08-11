@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import ast
 import hashlib
 import json
 import math
 import os
 import random
-import re
-import textwrap
 import uuid
 from dataclasses import dataclass
 from typing import Any, Protocol, Sequence
@@ -25,27 +22,19 @@ from ...core import (
     TaskDescriptionBundle,
     TrialObservation,
     TrialSuggestion,
+    build_prompt_context,
+    compile_candidate_generation_prompt,
+    default_candidate_generation_contract,
+    format_candidate_response,
+    parse_candidate_response,
 )
+from ..benchmark_protocol import FixedInitializationProtocol, resolve_fixed_initialization
 from ...core.adapters import ExternalOptimizerAdapter
 
 
 def _stable_seed(*parts: Any) -> int:
     payload = "::".join(str(part) for part in parts)
     return int(hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16], 16)
-
-
-def _strip_markdown_heading(text: str) -> str:
-    lines = text.strip().splitlines()
-    if lines and lines[0].lstrip().startswith("#"):
-        lines = lines[1:]
-    return "\n".join(lines).strip()
-
-
-def _truncate_text(text: str, limit: int) -> str:
-    compact = " ".join(_strip_markdown_heading(text).split())
-    if len(compact) <= limit:
-        return compact
-    return compact[: max(0, limit - 3)].rstrip() + "..."
 
 
 def _score_to_minimization(direction: ObjectiveDirection, score: float) -> float:
@@ -65,18 +54,6 @@ def _canonical_config(search_space: SearchSpace, config: dict[str, Any]) -> dict
 
 def _config_key(search_space: SearchSpace, config: dict[str, Any]) -> str:
     return json.dumps(_canonical_config(search_space, config), sort_keys=True, separators=(",", ":"))
-
-
-def _serialize_config(
-    search_space: SearchSpace,
-    config: dict[str, Any],
-    *,
-    parameter_order: Sequence[str] | None = None,
-) -> str:
-    normalized = search_space.coerce_config(config, use_defaults=False)
-    order = list(parameter_order or search_space.names())
-    payload = {name: _format_scalar(normalized[name]) for name in order}
-    return json.dumps(payload, separators=(",", ":"))
 
 
 @dataclass(frozen=True)
@@ -123,17 +100,18 @@ class HeuristicOproBackend:
         return "heuristic"
 
     def generate_candidate_texts(self, request: OproGenerationRequest) -> list[str]:
-        texts: list[str] = []
+        candidates: list[dict[str, Any]] = []
         for index in range(request.n_responses):
             rng = random.Random(_stable_seed(request.seed, "candidate", index))
             config = self._sample_candidate(request, rng)
-            rendered = _serialize_config(
+            candidates.append(config)
+        return [
+            format_candidate_response(
                 request.search_space,
-                config,
+                candidates,
                 parameter_order=request.parameter_order,
             )
-            texts.append(f"<candidate>{rendered}</candidate>")
-        return texts
+        ]
 
     def request_metadata(self) -> dict[str, Any]:
         return {}
@@ -207,6 +185,9 @@ class OpenAICompatibleOproBackend:
         project: str | None = None,
         timeout_seconds: float = 30.0,
         max_retries: int = 3,
+        provider_name: str = "openai",
+        include_seed: bool = True,
+        include_store: bool = True,
     ) -> None:
         if not api_key:
             raise ValueError("An explicit OpenAI API key is required for the online OPRO backend.")
@@ -217,10 +198,13 @@ class OpenAICompatibleOproBackend:
         self.project = project
         self.timeout_seconds = float(timeout_seconds)
         self.max_retries = max(0, int(max_retries))
+        self.provider_name = provider_name
+        self.include_seed = bool(include_seed)
+        self.include_store = bool(include_store)
 
     @property
     def name(self) -> str:
-        return "openai"
+        return self.provider_name
 
     def generate_candidate_texts(self, request: OproGenerationRequest) -> list[str]:
         raw_texts = self._chat_text(
@@ -253,9 +237,11 @@ class OpenAICompatibleOproBackend:
             ],
             "temperature": temperature,
             "n": int(max(1, n)),
-            "seed": int(seed % (2**31 - 1)),
-            "store": False,
         }
+        if self.include_seed:
+            payload["seed"] = int(seed % (2**31 - 1))
+        if self.include_store:
+            payload["store"] = False
         data, _ = self._post_with_retry(payload)
         choices = data.get("choices", [])
         texts: list[str] = []
@@ -338,7 +324,7 @@ class OproAlgorithm(ExternalOptimizerAdapter):
         model: str = "gpt-4o-mini",
         n_initial_samples: int = 5,
         n_candidates: int = 8,
-        max_prompt_pairs: int = 20,
+        max_prompt_pairs: int | None = None,
         max_generation_rounds: int = 4,
     ) -> None:
         super().__init__()
@@ -346,7 +332,7 @@ class OproAlgorithm(ExternalOptimizerAdapter):
             raise ValueError("n_initial_samples must be positive.")
         if n_candidates <= 0:
             raise ValueError("n_candidates must be positive.")
-        if max_prompt_pairs <= 0:
+        if max_prompt_pairs is not None and max_prompt_pairs <= 0:
             raise ValueError("max_prompt_pairs must be positive.")
         if max_generation_rounds <= 0:
             raise ValueError("max_generation_rounds must be positive.")
@@ -355,13 +341,14 @@ class OproAlgorithm(ExternalOptimizerAdapter):
         self.model = model
         self.n_initial_samples = int(n_initial_samples)
         self.n_candidates = int(n_candidates)
-        self.max_prompt_pairs = int(max_prompt_pairs)
+        self.max_prompt_pairs = None if max_prompt_pairs is None else int(max_prompt_pairs)
         self.max_generation_rounds = int(max_generation_rounds)
         self._seed = 0
         self._description = TaskDescriptionBundle.empty(task_id="uninitialized")
         self._history: list[TrialObservation] = []
         self._seen_configs: set[str] = set()
         self._backend: OproBackend | None = None
+        self._fixed_initialization: FixedInitializationProtocol | None = None
 
     @property
     def name(self) -> str:
@@ -372,6 +359,7 @@ class OproAlgorithm(ExternalOptimizerAdapter):
             raise ValueError("OproAlgorithm currently supports exactly one objective.")
         self.bind_task_spec(task_spec)
         self._seed = int(seed)
+        self._fixed_initialization = resolve_fixed_initialization(task_spec, seed=self._seed)
         description = kwargs.get("task_description")
         if isinstance(description, TaskDescriptionBundle):
             self._description = description
@@ -382,7 +370,22 @@ class OproAlgorithm(ExternalOptimizerAdapter):
         self._backend = self.backend_impl or self._build_backend()
 
     def ask(self) -> TrialSuggestion:
-        if len(self._history) < min(self.n_initial_samples, self.require_task_spec().max_evaluations):
+        if self._fixed_initialization is not None and len(self._history) < min(
+            len(self._fixed_initialization.configurations),
+            self.require_task_spec().max_evaluations,
+        ):
+            suggestion = self._fixed_initialization.suggestion(len(self._history), algorithm=self.name)
+            suggestion.metadata.update(
+                {
+                    "opro_phase": "benchmark_initialization",
+                    "opro_backend": self._require_backend().name,
+                    "opro_history_size": len(self._history),
+                }
+            )
+            return suggestion
+        if self._fixed_initialization is None and len(self._history) < min(
+            self.n_initial_samples, self.require_task_spec().max_evaluations
+        ):
             config = self._sample_initial_config(index=len(self._history))
             return TrialSuggestion(
                 config=config,
@@ -415,7 +418,7 @@ class OproAlgorithm(ExternalOptimizerAdapter):
                     "opro_phase": "fallback_random",
                     "opro_backend": self._require_backend().name,
                     "opro_history_size": len(self._history),
-                    "opro_prompt_pairs": min(len(observed_points), self.max_prompt_pairs),
+                    "opro_prompt_pairs": self._prompt_pair_count(observed_points),
                     **backend_metadata,
                 },
             )
@@ -429,7 +432,7 @@ class OproAlgorithm(ExternalOptimizerAdapter):
                 "opro_backend": self._require_backend().name,
                 "opro_history_size": len(self._history),
                 "opro_candidate_count": len(candidates),
-                "opro_prompt_pairs": min(len(observed_points), self.max_prompt_pairs),
+                "opro_prompt_pairs": self._prompt_pair_count(observed_points),
                 **backend_metadata,
             },
         )
@@ -463,10 +466,10 @@ class OproAlgorithm(ExternalOptimizerAdapter):
     def _build_backend(self) -> OproBackend:
         if self.backend == "heuristic":
             return HeuristicOproBackend()
-        if self.backend == "openai":
+        if self.backend in {"openai", "kimi"}:
             raise RuntimeError(
                 "The online OPRO backend must be injected from the runner/CLI layer via `backend_impl` "
-                "so OpenAI credentials and endpoint settings stay in user-facing configuration."
+                "so provider credentials and endpoint settings stay in user-facing configuration."
             )
         raise ValueError(f"Unknown OPRO backend `{self.backend}`.")
 
@@ -489,6 +492,11 @@ class OproAlgorithm(ExternalOptimizerAdapter):
                 )
             )
         return points
+
+    def _prompt_pair_count(self, observed_points: Sequence[OproObservedPoint]) -> int:
+        if self.max_prompt_pairs is None:
+            return len(observed_points)
+        return min(len(observed_points), self.max_prompt_pairs)
 
     def _sample_initial_config(self, *, index: int) -> dict[str, Any]:
         search_space = self.require_search_space()
@@ -534,154 +542,25 @@ class OproAlgorithm(ExternalOptimizerAdapter):
         *,
         parameter_order: Sequence[str],
     ) -> str:
-        assert self._primary_name is not None
-        direction_text = "lower values are better" if self._primary_direction == ObjectiveDirection.MINIMIZE else "higher values are better"
-        ordering_text = "descending" if self._primary_direction == ObjectiveDirection.MINIMIZE else "ascending"
-        example_config = _serialize_config(self.require_search_space(), self.require_search_space().defaults(), parameter_order=parameter_order)
-        return textwrap.dedent(
-            f"""
-            You are helping with black-box optimization for task `{self.require_task_spec().name}`.
-            Objective: optimize `{self._primary_name}` where {direction_text}.
-
-            Search space:
-            {self._search_space_block(parameter_order=parameter_order)}
-
-            Task context:
-            {self._task_context_block()}
-
-            Below are some previous configurations and their objective values.
-            The configurations are arranged in {ordering_text} order based on their objective values, where {direction_text}.
-
-            {self._observed_pairs_block(observed_points, parameter_order=parameter_order)}
-
-            Give me {self.n_candidates} new configurations that are different from all configurations above and are likely to achieve a better objective value than any configuration above.
-            Use the exact parameter names from the search space.
-            Return each configuration as compact JSON wrapped in <candidate>...</candidate>.
-            Example format: <candidate>{example_config}</candidate>
-            Do not write code. Do not add any prose.
-            """
-        ).strip()
-
-    def _task_context_block(self) -> str:
-        sections = []
-        for kind in ("background", "goal", "constraints", "prior_knowledge"):
-            content = self._description.section_map.get(kind)
-            if not content:
-                continue
-            title = kind.replace("_", " ").title()
-            sections.append(f"- {title}: {_truncate_text(content, 320)}")
-        if sections:
-            return "\n".join(sections)
-        return "- No external task-description bundle was supplied."
-
-    def _search_space_block(self, *, parameter_order: Sequence[str]) -> str:
-        space = self.require_search_space()
-        lines: list[str] = []
-        for name in parameter_order:
-            param = space[name]
-            if isinstance(param, FloatParam):
-                line = f"- {name}: float in [{param.low:g}, {param.high:g}]"
-                if param.log:
-                    line += " on a log scale"
-                line += f", default {param.effective_default():g}"
-                lines.append(line)
-                continue
-            if isinstance(param, IntParam):
-                line = f"- {name}: int in [{param.low}, {param.high}]"
-                if param.log:
-                    line += " on a log scale"
-                line += f", default {param.effective_default()}"
-                lines.append(line)
-                continue
-            assert isinstance(param, CategoricalParam)
-            choices = ", ".join(repr(choice) for choice in param.choices)
-            lines.append(f"- {name}: categorical, choices [{choices}], default {param.effective_default()!r}")
-        return "\n".join(lines)
-
-    def _observed_pairs_block(
-        self,
-        observed_points: Sequence[OproObservedPoint],
-        *,
-        parameter_order: Sequence[str],
-    ) -> str:
-        ordered = sorted(
-            observed_points,
-            key=lambda point: _score_to_minimization(self._primary_direction, point.score),
-            reverse=True,
+        _ = observed_points
+        contract = default_candidate_generation_contract(
+            max_history_trials=self.max_prompt_pairs,
+            parameter_order=parameter_order,
+            max_chars_per_section=1200,
         )
-        if len(ordered) > self.max_prompt_pairs:
-            ordered = ordered[-self.max_prompt_pairs :]
-
-        blocks: list[str] = []
-        for point in ordered:
-            config_text = _serialize_config(self.require_search_space(), point.config, parameter_order=parameter_order)
-            trial_line = ""
-            if point.trial_id is not None:
-                trial_line = f"trial_id: {point.trial_id}\n"
-            blocks.append(f"{trial_line}input:\n{config_text}\nvalue:\n{point.score:.8f}")
-        return "\n\n".join(blocks)
+        context = build_prompt_context(
+            task_spec=self.require_task_spec(),
+            description=self._description,
+            history=self._history,
+            contract=contract,
+        )
+        return compile_candidate_generation_prompt(context, num_candidates=self.n_candidates)
 
     def _parse_candidate_text(self, text: str) -> list[dict[str, Any]]:
-        blocks = re.findall(r"<candidate>\s*(.*?)\s*</candidate>", text, flags=re.IGNORECASE | re.DOTALL)
-        if not blocks:
-            blocks = re.findall(r"\{.*?\}", text, flags=re.DOTALL)
-        if not blocks:
-            blocks = re.findall(r"\[.*?\]", text, flags=re.DOTALL)
-
-        parsed_candidates: list[dict[str, Any]] = []
-        for block in blocks:
-            parsed = self._parse_candidate_payload(block)
-            if parsed is None:
-                continue
-            try:
-                candidate = self.require_search_space().coerce_config(parsed, use_defaults=False)
-            except Exception:
-                continue
-            parsed_candidates.append(candidate)
-        return parsed_candidates
-
-    def _parse_candidate_payload(self, text: str) -> dict[str, Any] | None:
-        cleaned = text.strip()
-        for loader in (json.loads, ast.literal_eval):
-            try:
-                value = loader(cleaned)
-            except Exception:
-                continue
-            mapping = self._mapping_from_loaded_value(value)
-            if mapping is not None:
-                return mapping
-
-        if cleaned.startswith("[") and cleaned.endswith("]"):
-            inner = cleaned[1:-1].strip()
-            if "=" in inner:
-                pairs = [item.strip() for item in inner.split(",") if item.strip()]
-                mapping: dict[str, Any] = {}
-                for pair in pairs:
-                    if "=" not in pair:
-                        return None
-                    key, raw_value = pair.split("=", 1)
-                    value = self._parse_scalar(raw_value.strip())
-                    mapping[key.strip()] = value
-                if mapping:
-                    return mapping
-        return None
-
-    def _mapping_from_loaded_value(self, value: Any) -> dict[str, Any] | None:
-        if isinstance(value, dict):
-            return dict(value)
-        if isinstance(value, (list, tuple)) and len(value) == len(self.require_search_space()):
-            names = self.require_search_space().names()
-            return {name: item for name, item in zip(names, value, strict=True)}
-        return None
-
-    @staticmethod
-    def _parse_scalar(text: str) -> Any:
-        for loader in (json.loads, ast.literal_eval):
-            try:
-                return loader(text)
-            except Exception:
-                continue
-        return text
+        try:
+            return parse_candidate_response(text, self.require_search_space(), strict=False)
+        except Exception:
+            return []
 
 
 __all__ = [

@@ -1,0 +1,20 @@
+# Constraints
+
+The optimizer may change exactly the 2 parameters below. Bounds are inclusive and transforms are applied before numerical optimization.
+
+| Parameter | Type | Transform | Lower | Upper |
+|---|---|---:|---:|---:|
+| `n_estimators` | integer | linear | 10 | 100 |
+| `learning_rate` | real | log | 0.0001 | 10 |
+
+`linear` is affine scaling, `log` is natural-log scaling, and `logit` is log-odds scaling between the declared physical endpoints. Integer parameters are rounded to the nearest valid integer after inverse transformation.
+
+Fixed estimator parameters:
+
+```json
+{
+  "random_state": 0
+}
+```
+
+The dataset split, feature values, target values, model family, five-fold protocol, scoring rule, and fixed parameters may not be changed. Invalid, missing, extra, non-finite, or out-of-range values fail the evaluation.

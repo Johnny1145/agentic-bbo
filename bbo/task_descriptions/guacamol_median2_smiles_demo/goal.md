@@ -1,11 +1,7 @@
 # Goal
 
-Implementation source: `bbo/tasks/scientific/guacamol_smiles.py`, `_score_mol()`.
+Maximize the GuacaMol Median Molecules 2 score.
 
-Maximize `median2_score`.
+This benchmark scores a molecule by its similarity to two target molecules: tadalafil and sildenafil. The score combines ECFP6 Tanimoto similarity to tadalafil and ECFP6 Tanimoto similarity to sildenafil using a geometric mean.
 
-Optimized objective: minimize `median2_loss = 1 - median2_score`.
-
-Fingerprint type recorded in the task definition: `ECFP6`.
-
-The implemented score uses `_geometric_mean()` over ECFP6 similarity to tadalafil and sildenafil.
+In the local loss-minimization interface, optimize `median2_loss = 1 - median2_score`.

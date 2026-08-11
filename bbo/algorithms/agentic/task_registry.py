@@ -72,6 +72,10 @@ class TaskRegistry:
             if not name or not text:
                 continue
             card = self._cards.get(name)
+            if text.upper() == "USE EXISTING":
+                if card is not None:
+                    continue
+                continue
             if card is None:
                 self._cards[name] = TaskCard(name=name, text=text, is_default=False)
                 inserted.append(name)
@@ -79,6 +83,21 @@ class TaskRegistry:
                 card.text = text
         self._trim_to_capacity()
         return inserted
+
+    def resolve_planner_tasks(self, tasks: Mapping[str, str]) -> dict[str, str]:
+        resolved: dict[str, str] = {}
+        for raw_name, raw_text in tasks.items():
+            name = str(raw_name).strip()
+            text = str(raw_text).strip()
+            if not name or not text:
+                continue
+            if text.upper() == "USE EXISTING":
+                card = self._cards.get(name)
+                if card is not None:
+                    resolved[name] = card.text
+                continue
+            resolved[name] = text
+        return resolved
 
     def record_attempt(self, task_name: str, *, success: bool) -> None:
         if task_name not in self._cards:

@@ -23,7 +23,7 @@ Each `*.joblib` is a **serialized sklearn surrogate** (RF, etc.): it maps physic
 | `pg_5.joblib` | `knob_surrogate_pg_5` | `AGENTIC_BBO_PG5_SURROGATE` |
 | `pg_20.joblib` | `knob_surrogate_pg_20` | `AGENTIC_BBO_PG20_SURROGATE` |
 
-For Sysbench-5, you can also use a **tiny** placeholder from `python -m bbo.tasks.dbtune.build_placeholder_surrogate` (`sysbench_5knob_surrogate.joblib`) for quick smoke tests.
+Formal benchmark task IDs require the released checkpoint files above. Placeholder surrogates are reserved for separately named smoke-test tasks and are not used as fallbacks by the active benchmark ids.
 
 ## Bundled knobs JSON
 

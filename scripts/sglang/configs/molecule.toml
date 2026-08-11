@@ -1,0 +1,90 @@
+family = "molecule"
+display_name = "Molecule"
+env_prefix = "MOLECULE"
+run_root_prefix = "sglang_molecule"
+task_flag = "--task"
+default_task_selection = "all"
+default_algorithms = ["opro", "nanobot", "graph_ga", "gpbo"]
+default_seeds = [1]
+default_jobs = 1
+smiles_init_csv = "{repo_root}/scripts/sglang/data/guacamol_init_smiles_smoke.txt"
+smiles_init_txt = "{repo_root}/.cache/guacamol_init_smiles.txt"
+
+tasks = [
+  "guacamol_fexofenadine_mpo_smiles_demo",
+  "guacamol_median1_smiles_demo",
+  "guacamol_amlodipine_mpo_smiles_demo",
+  "guacamol_median2_smiles_demo",
+  "guacamol_osimertinib_mpo_smiles_demo",
+  "guacamol_perindopril_mpo_smiles_demo",
+  "guacamol_ranolazine_mpo_smiles_demo",
+  "guacamol_sitagliptin_mpo_smiles_demo",
+  "guacamol_valsartan_smarts_smiles_demo",
+  "guacamol_zaleplon_mpo_smiles_demo",
+]
+
+[commands.opro]
+kind = "workflow"
+requires_sglang = true
+uv_extras = ["bo-tutorial", "nanobot"]
+script = "{repo_root}/workflow/30_guacamol_opro_nanobot/sglang_seed1_init50_opt200_20260709/run_guacamol_opro_nanobot_sglang_seed1_init50_opt200.py"
+args = [
+  "--algorithm", "opro",
+  "--n-initial-points", "{molecule_n_initial_points}",
+  "--optimizer-budget", "{molecule_optimizer_budget}",
+  "--init-source", "{smiles_init_csv}",
+  "--output-dir", "{run_root}/opro/outputs",
+  "--summary-dir", "{run_root}/opro/summary",
+  "--jobs", "{jobs}",
+  "--local-llm-api-key-env", "LOCAL_LLM_API_KEY",
+  "--local-llm-model", "{sglang_model}",
+  "--local-llm-base-url", "{sglang_base_url}",
+  "--local-llm-timeout-seconds", "{sglang_timeout_seconds}",
+  "--local-llm-max-retries", "{sglang_max_retries}",
+  "--agent-prompt-style", "workspace",
+  "--agent-tool-mode", "workspace_json",
+  "--agent-history-limit", "{agent_history_limit}",
+  "--agent-max-tool-calls", "{agent_max_tool_calls}",
+  "--agent-timeout-seconds", "{molecule_agent_timeout_seconds}",
+  "--agent-max-retries", "{agent_max_retries}",
+]
+
+[commands.nanobot]
+kind = "workflow"
+aliases = ["agentic_nanobot"]
+requires_sglang = true
+uv_extras = ["bo-tutorial", "nanobot"]
+script = "{repo_root}/workflow/30_guacamol_opro_nanobot/sglang_seed1_init50_opt200_20260709/run_guacamol_opro_nanobot_sglang_seed1_init50_opt200.py"
+args = [
+  "--algorithm", "nanobot",
+  "--n-initial-points", "{molecule_n_initial_points}",
+  "--optimizer-budget", "{molecule_optimizer_budget}",
+  "--init-source", "{smiles_init_csv}",
+  "--output-dir", "{run_root}/nanobot/outputs",
+  "--summary-dir", "{run_root}/nanobot/summary",
+  "--jobs", "{jobs}",
+  "--local-llm-api-key-env", "LOCAL_LLM_API_KEY",
+  "--local-llm-model", "{sglang_model}",
+  "--local-llm-base-url", "{sglang_base_url}",
+  "--local-llm-timeout-seconds", "{sglang_timeout_seconds}",
+  "--local-llm-max-retries", "{sglang_max_retries}",
+  "--agent-prompt-style", "workspace",
+  "--agent-tool-mode", "workspace_json",
+  "--agent-history-limit", "{agent_history_limit}",
+  "--agent-max-tool-calls", "{agent_max_tool_calls}",
+  "--agent-timeout-seconds", "{molecule_agent_timeout_seconds}",
+  "--agent-max-retries", "{agent_max_retries}",
+]
+
+[generic_bbo_run]
+algorithms = ["graph_ga", "gpbo", "graph_gpbo"]
+uv_extras = ["bo-tutorial"]
+uv_extras_by_algorithm = { gpbo = ["molecular"], graph_gpbo = ["molecular"] }
+max_evaluations_env = "MOLECULE_MAX_EVALUATIONS"
+max_evaluations = 250
+max_evaluations_env_by_algorithm = { gpbo = "MOLECULE_GPBO_MAX_EVALUATIONS", graph_gpbo = "MOLECULE_GPBO_MAX_EVALUATIONS" }
+max_evaluations_by_algorithm = { gpbo = 540, graph_gpbo = 540 }
+results_root = "{run_root}/molecular"
+no_plots = true
+prepare_smiles_init = true
+args = ["--molecular-initial-smiles-path", "{smiles_init_txt}"]

@@ -1,7 +1,8 @@
-"""Build a compact sklearn RF surrogate for Sysbench 5-knob (repo self-containment).
+"""Build a compact sklearn RF surrogate for explicit smoke/prototyping use.
 
-Large checkpoints from the original project may be omitted; this writes a small
-placeholder so ``bbo.tasks.dbtune`` works without a full-size ``RF_SYSBENCH_5knob.joblib``.
+Formal dbtune benchmark task ids require the released checkpoints. This helper
+writes ``sysbench_5knob_surrogate.joblib`` only for separately named smoke tasks
+or local prototyping.
 
 Usage (from repo root)::
 

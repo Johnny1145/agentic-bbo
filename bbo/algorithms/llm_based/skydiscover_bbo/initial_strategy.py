@@ -35,6 +35,10 @@ def suggest_next_config(
         elif typ == "categorical":
             choices = list(spec["choices"])
             out[name] = rng.choice(choices)
+        elif typ == "string":
+            if "default" not in spec:
+                raise ValueError(f"String parameter {name!r} requires an explicit default for the seed strategy.")
+            out[name] = str(spec["default"])
         else:
             raise ValueError(f"Unknown parameter type {typ!r} for {name!r}")
     return out

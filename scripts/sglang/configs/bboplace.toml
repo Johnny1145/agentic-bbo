@@ -1,0 +1,144 @@
+family = "bboplace"
+display_name = "BBOPlace"
+env_prefix = "BBOPLACE"
+run_root_prefix = "sglang_bboplace"
+task_flag = "--benchmark"
+default_task_selection = "all"
+default_algorithms = ["opro", "nanobot", "random_search", "optuna_tpe", "cma_es"]
+default_seeds = [1]
+default_jobs = 1
+
+default_base_urls = [
+  "http://127.0.0.1:8270",
+  "http://127.0.0.1:8280",
+  "http://127.0.0.1:8281",
+  "http://127.0.0.1:8282",
+  "http://127.0.0.1:8283",
+  "http://127.0.0.1:8284",
+  "http://127.0.0.1:8285",
+  "http://127.0.0.1:8286",
+  "http://127.0.0.1:8287",
+  "http://127.0.0.1:8070",
+]
+
+tasks = [
+  "adaptec1",
+  "adaptec2",
+  "adaptec3",
+  "adaptec4",
+  "bigblue1",
+  "bigblue2",
+  "bigblue3",
+  "bigblue4",
+  "superblue1",
+  "superblue3",
+  "superblue4",
+  "superblue5",
+  "superblue7",
+  "superblue10",
+  "superblue16",
+  "superblue18",
+]
+
+[commands.opro]
+kind = "workflow"
+requires_sglang = true
+uv_extras = ["bo-tutorial"]
+script = "{repo_root}/workflow/20_bboplace_llm_experiments/opro_qwen35_n32_seed1_20260613/run_opro_local_qwen35_bboplace_full16_n32_seed1_history20_rankmix.py"
+task_env = "BBOPLACE_LLM_BENCHMARKS"
+default_tasks = "all"
+args = [
+  "--bboplace-base-urls", "{bboplace_base_urls}",
+  "--executor", "{executor}",
+  "--output-dir", "{run_root}/opro/outputs",
+  "--summary-dir", "{run_root}/opro/summary",
+  "--local-llm-api-key-env", "LOCAL_LLM_API_KEY",
+  "--local-llm-model", "{sglang_model}",
+  "--local-llm-base-url", "{sglang_base_url}",
+  "--local-llm-timeout-seconds", "{sglang_timeout_seconds}",
+  "--local-llm-max-retries", "{sglang_max_retries}",
+  "--opro-prompt-pairs", "{opro_prompt_pairs}",
+  "--jobs", "{jobs}",
+]
+
+[commands.nanobot]
+kind = "workflow"
+aliases = ["agentic_nanobot"]
+requires_sglang = true
+uv_extras = ["bo-tutorial", "nanobot"]
+script = "{repo_root}/workflow/20_bboplace_llm_experiments/nanobot_qwen35_n32_seed1_20260618/run_nanobot_local_qwen35_bboplace_full16_n32_seed1_history20_directjson.py"
+task_env = "BBOPLACE_LLM_BENCHMARKS"
+default_tasks = "all"
+args = [
+  "--bboplace-base-urls", "{bboplace_base_urls}",
+  "--fixed-initial-dataset", "{repo_root}/workflow/01_fixed_initial_datasets",
+  "--fixed-initial-dataset-id", "bboplace_full16_n32_seed1_random_uniform50_v1",
+  "--setting-version", "nanobot_local_sglang_seed1_n32_fixedinit50_opt200_workspace_history200_v1",
+  "--n-initial-points", "50",
+  "--optimizer-budget", "200",
+  "--output-dir", "{run_root}/nanobot/outputs",
+  "--summary-dir", "{run_root}/nanobot/summary",
+  "--local-llm-api-key-env", "LOCAL_LLM_API_KEY",
+  "--local-llm-model", "{sglang_model}",
+  "--local-llm-base-url", "{sglang_base_url}",
+  "--agent-prompt-style", "workspace",
+  "--agent-tool-mode", "workspace_json",
+  "--agent-history-limit", "{agent_history_limit}",
+  "--agent-max-tool-calls", "{agent_max_tool_calls}",
+  "--agent-timeout-seconds", "{agent_timeout_seconds}",
+  "--agent-max-retries", "{agent_max_retries}",
+  "--agent-enable-memory",
+  "--no-agent-enable-code-interpreter",
+  "--agent-code-backend", "local_disabled",
+  "--agent-web-search-provider", "disabled",
+  "--jobs", "{jobs}",
+]
+
+[commands.random_search]
+kind = "workflow"
+aliases = ["random"]
+uv_extras = ["bo-tutorial"]
+script = "{repo_root}/workflow/10_bboplace_baselines/random_search_bboplace_dbtune_20260525/run_random_search_bboplace_dbtune_tasks.py"
+task_env = "BBOPLACE_BASELINE_BENCHMARKS"
+default_tasks = ["adaptec1", "adaptec2", "adaptec3", "adaptec4", "bigblue1", "bigblue3"]
+args = [
+  "--family", "bboplace",
+  "--mariadb-mode", "skip",
+  "--jobs", "{jobs}",
+  "--service-workers", "{service_workers}",
+  "--executor", "{executor}",
+  "--output-dir", "{run_root}/random_search/outputs",
+  "--summary-dir", "{run_root}/random_search/summary",
+]
+repeat_flags = [{ flag = "--n-macro", env = "BBOPLACE_N_MACROS", default = ["32"] }]
+
+[commands.optuna_tpe]
+kind = "workflow"
+uv_extras = ["bo-tutorial", "optuna"]
+script = "{repo_root}/workflow/10_bboplace_baselines/optuna_tpe_all_units_20260517/run_optuna_tpe_bboplace_all_tasks.py"
+task_env = "BBOPLACE_BASELINE_BENCHMARKS"
+default_tasks = ["adaptec1", "adaptec2", "adaptec3", "adaptec4", "bigblue1", "bigblue3"]
+args = [
+  "--jobs", "{jobs}",
+  "--service-workers", "{service_workers}",
+  "--executor", "{executor}",
+  "--output-dir", "{run_root}/optuna_tpe/outputs",
+  "--summary-dir", "{run_root}/optuna_tpe/summary",
+]
+repeat_flags = [{ flag = "--n-macro", env = "BBOPLACE_N_MACROS", default = ["32"] }]
+
+[commands.cma_es]
+kind = "workflow"
+aliases = ["pycma"]
+uv_extras = ["bo-tutorial"]
+script = "{repo_root}/workflow/10_bboplace_baselines/cma_es_popsize1_all_units_20260524/run_cma_es_popsize1_bboplace_all_tasks.py"
+task_env = "BBOPLACE_BASELINE_BENCHMARKS"
+default_tasks = ["adaptec1", "adaptec2", "adaptec3", "adaptec4", "bigblue1", "bigblue3"]
+args = [
+  "--jobs", "{jobs}",
+  "--service-workers", "{service_workers}",
+  "--executor", "{executor}",
+  "--output-dir", "{run_root}/cma_es/outputs",
+  "--summary-dir", "{run_root}/cma_es/summary",
+]
+repeat_flags = [{ flag = "--n-macro", env = "BBOPLACE_N_MACROS", default = ["32"] }]

@@ -12,6 +12,7 @@ import json
 import math
 import random
 import sys
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -79,6 +80,7 @@ def _gp_lcb_candidates(
     n: int,
 ) -> list[dict[str, Any]]:
     import numpy as np
+    from sklearn.exceptions import ConvergenceWarning
     from sklearn.gaussian_process import GaussianProcessRegressor
     from sklearn.gaussian_process.kernels import ConstantKernel, RBF, WhiteKernel
 
@@ -95,7 +97,9 @@ def _gp_lcb_candidates(
         length_scale_bounds=(0.05, 5.0),
     ) + WhiteKernel(noise_level=1e-5, noise_level_bounds=(1e-8, 1e-1))
     model = GaussianProcessRegressor(kernel=kernel, normalize_y=False, random_state=0, n_restarts_optimizer=2)
-    model.fit(x_train, y_scaled)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", ConvergenceWarning)
+        model.fit(x_train, y_scaled)
 
     pool = _candidate_pool(bbo, parameters, rng, size=256)
     x_pool = np.array([_encode_config(config, parameters) for config in pool], dtype=float)

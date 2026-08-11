@@ -28,7 +28,6 @@ import numpy as np
 
 from bbo.algorithms.llm_based.generated_solver.specs import parameter_specs_to_search_space
 from bbo.core.space import SearchSpace
-from bbo.tasks.registry import SYNTHETIC_PROBLEM_REGISTRY, get_synthetic_problem
 
 logger = logging.getLogger(__name__)
 
@@ -186,21 +185,10 @@ def _evaluate_distance_mode(
 def _resolve_space_and_optima(
     ctx: dict[str, Any], parameter_specs: list[dict[str, Any]]
 ) -> tuple[SearchSpace, tuple[tuple[float, ...], ...]] | None:
-    problem_key = str(ctx.get("problem_key", ""))
     raw_optima = ctx.get("known_optima")
-
-    if problem_key and problem_key in SYNTHETIC_PROBLEM_REGISTRY:
-        definition = get_synthetic_problem(problem_key)
-        return definition.search_space, definition.known_optima
-
     if not isinstance(raw_optima, list) or not raw_optima:
-        logger.warning(
-            "Distance mode requested but unknown problem_key=%r without known_optima; "
-            "falling back to contract scoring.",
-            problem_key,
-        )
+        logger.warning("Distance mode requested without explicit known_optima; using contract scoring.")
         return None
-
     try:
         space = parameter_specs_to_search_space(parameter_specs)
     except (TypeError, ValueError) as exc:

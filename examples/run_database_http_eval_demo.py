@@ -1,7 +1,8 @@
-"""Run optimizers on dbtune MySQL 5.7/sysbench tasks (Docker evaluator).
+"""Legacy demo for dbtune MySQL 5.7/sysbench tasks (Docker evaluator).
 
-Tasks are defined under ``bbo/tasks/dbtune/`` and registered in ``bbo.tasks.registry``.
-This script calls ``create_dbtune_mariadb_task`` directly (same shape as ``bbo.run.run_single_experiment``).
+The active dbtune task set only keeps the six ``knob_http_surrogate_*`` tasks.
+This script is retained for manual legacy experiments and imports the legacy
+MariaDB modules directly; these ids are not registered in ``bbo.tasks.registry``.
 
 Prerequisite: start the API from ``bbo/tasks/dbtune/docker_mariadb/`` (MySQL 5.7 image; see each task's ``environment.md``).
 """
@@ -21,7 +22,8 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from bbo.algorithms import ALGORITHM_REGISTRY, create_algorithm
 from bbo.core import ExperimentConfig, Experimenter, JsonlMetricLogger, Task
-from bbo.tasks.dbtune import DBTUNE_MARIADB_TASK_IDS, create_dbtune_mariadb_task
+from bbo.tasks.dbtune.http_mariadb_specs import DBTUNE_MARIADB_TASK_IDS
+from bbo.tasks.dbtune.http_mariadb_task import create_dbtune_mariadb_task
 
 _DEFAULT_RESULTS_ROOT = _PROJECT_ROOT / "runs" / "demo"
 _DEFAULT_TASK = "knob_http_mariadb_sysbench_read_write_5"

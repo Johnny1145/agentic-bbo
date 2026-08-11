@@ -1,5 +1,7 @@
 # Domain Prior Knowledge
 
-No additional task-specific prior is added here.
+This is one of GuacaMol's drug-related multi-property objective benchmarks. The benchmark-defined reference molecule is fexofenadine.
 
-Use only the source benchmark, target SMILES, fingerprint type, metric name, and scoring implementation recorded in `bbo/tasks/scientific/guacamol_smiles.py`.
+The score is a scalarized combination of atom-pair similarity, TPSA, and logP terms. The geometric mean aggregation means that the final score depends on all listed components.
+
+Do not add search instructions such as how to chemically modify fexofenadine unless an external literature source explicitly supports them.

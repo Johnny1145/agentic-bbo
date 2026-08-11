@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
+
+from cma.evolution_strategy import InjectionWarning
 
 from bbo.core import (
     CategoricalParam,
@@ -16,11 +19,17 @@ from bbo.core import (
 )
 from bbo.algorithms import create_algorithm
 from bbo.core import ExperimentConfig, Experimenter, JsonlMetricLogger
-from bbo.tasks import SyntheticFunctionTask, SyntheticFunctionTaskConfig
+from bbo.tasks import create_task
+
+
+def test_pycma_default_popsize_is_two() -> None:
+    algorithm = create_algorithm("pycma")
+
+    assert algorithm.popsize == 2
 
 
 def test_pycma_runs_on_numeric_task(tmp_path: Path) -> None:
-    task = SyntheticFunctionTask(SyntheticFunctionTaskConfig(problem="sphere_demo", max_evaluations=14, seed=5))
+    task = create_task("bbob_f01_d10", max_evaluations=14, seed=5)
     logger = JsonlMetricLogger(tmp_path / "pycma.jsonl")
     experiment = Experimenter(
         task=task,
@@ -73,3 +82,36 @@ def test_pycma_runs_on_mixed_task_via_onehot_converter() -> None:
     assert seen_activations
     assert seen_activations <= {"relu", "gelu", "tanh"}
     assert algorithm.incumbents()
+
+
+def test_pycma_tells_exact_latent_vectors_for_rounded_configs() -> None:
+    task_spec = TaskSpec(
+        name="rounded_pycma_demo",
+        search_space=SearchSpace(
+            [
+                IntParam("workers", low=1, high=64, default=8),
+                CategoricalParam("mode", choices=("a", "b", "c"), default="a"),
+            ]
+        ),
+        objectives=(ObjectiveSpec("loss", ObjectiveDirection.MINIMIZE),),
+        max_evaluations=100,
+    )
+    algorithm = create_algorithm("pycma", sigma_fraction=0.18, popsize=10)
+    algorithm.setup(task_spec, seed=7)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InjectionWarning)
+        for trial_id in range(100):
+            suggestion = algorithm.ask()
+            loss = float(suggestion.config["workers"])
+            loss += {"a": 0.0, "b": 0.1, "c": 0.2}[str(suggestion.config["mode"])]
+            algorithm.tell(
+                TrialObservation.from_evaluation(
+                    TrialSuggestion(
+                        config=dict(suggestion.config),
+                        trial_id=trial_id,
+                        metadata=dict(suggestion.metadata),
+                    ),
+                    EvaluationResult(objectives={"loss": loss}),
+                )
+            )

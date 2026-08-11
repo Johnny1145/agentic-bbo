@@ -18,6 +18,19 @@ class CandidateEntry:
 
 
 @dataclass
+class PabloSearchState:
+    """One feedback-driven Explorer or Worker hill-climb."""
+
+    role: str
+    round_index: int
+    task_name: str | None = None
+    task_text: str | None = None
+    seed_index: int | None = None
+    current_seed: dict[str, Any] | None = None
+    consecutive_failures: int = 0
+
+
+@dataclass
 class PabloResumeState:
     round_index: int = 0
     failure_streak: int = 0
@@ -29,6 +42,8 @@ class PabloResumeState:
     best_score: float | None = None
     history_size: int = 0
     provider: str = "mock"
+    agenda: list[PabloSearchState] = field(default_factory=list)
+    active_search: PabloSearchState | None = None
 
 
-__all__ = ["CandidateEntry", "PabloResumeState"]
+__all__ = ["CandidateEntry", "PabloResumeState", "PabloSearchState"]

@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import ast
 import hashlib
 import json
 import math
 import random
 import re
-import textwrap
 from dataclasses import dataclass
 from typing import Any, Protocol, Sequence
 from urllib import error as urllib_error
@@ -25,27 +23,25 @@ from ...core import (
     TaskDescriptionBundle,
     TrialObservation,
     TrialSuggestion,
+    build_prompt_context,
+    candidate_response_json_schema,
+    compile_candidate_generation_prompt,
+    compile_score_prediction_prompt,
+    default_candidate_generation_contract,
+    default_score_prediction_contract,
+    format_candidate_response,
+    format_score_prediction_response,
+    parse_candidate_response,
+    parse_score_prediction_response,
+    score_prediction_json_schema,
 )
+from ..benchmark_protocol import FixedInitializationProtocol, resolve_fixed_initialization
 from ...core.adapters import ExternalOptimizerAdapter
 
 
 def _stable_seed(*parts: Any) -> int:
     payload = "::".join(str(part) for part in parts)
     return int(hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16], 16)
-
-
-def _strip_markdown_heading(text: str) -> str:
-    lines = text.strip().splitlines()
-    if lines and lines[0].lstrip().startswith("#"):
-        lines = lines[1:]
-    return "\n".join(lines).strip()
-
-
-def _truncate_text(text: str, limit: int) -> str:
-    compact = " ".join(_strip_markdown_heading(text).split())
-    if len(compact) <= limit:
-        return compact
-    return compact[: max(0, limit - 3)].rstrip() + "..."
 
 
 def _normal_pdf(value: float) -> float:
@@ -90,18 +86,6 @@ def _parameter_distance(param: FloatParam | IntParam | CategoricalParam, left: A
         right_value = _numeric_transform(param, float(right))
         return abs(left_value - right_value) / width
     return 0.0 if left == right else 1.0
-
-
-def _serialize_config(
-    search_space: SearchSpace,
-    config: dict[str, Any],
-    *,
-    parameter_order: Sequence[str] | None = None,
-) -> str:
-    normalized = search_space.coerce_config(config, use_defaults=False)
-    order = list(parameter_order or search_space.names())
-    payload = {name: normalized[name] for name in order}
-    return json.dumps(payload, separators=(",", ":"))
 
 
 @dataclass(frozen=True)
@@ -172,12 +156,18 @@ class HeuristicLlamboBackend:
         return "heuristic"
 
     def generate_candidate_texts(self, request: CandidateGenerationRequest) -> list[str]:
-        texts: list[str] = []
+        candidates: list[dict[str, Any]] = []
         for index in range(request.n_responses):
             rng = random.Random(_stable_seed(request.seed, "candidate", index))
             config = self._sample_candidate(request, rng)
-            texts.append(f"<candidate>{_serialize_config(request.search_space, config, parameter_order=request.parameter_order)}</candidate>")
-        return texts
+            candidates.append(config)
+        return [
+            format_candidate_response(
+                request.search_space,
+                candidates,
+                parameter_order=request.parameter_order,
+            )
+        ]
 
     def generate_score_texts(self, request: ScorePredictionRequest) -> list[str]:
         mean, std = self._estimate_score(request)
@@ -185,7 +175,7 @@ class HeuristicLlamboBackend:
         for index in range(request.n_responses):
             rng = random.Random(_stable_seed(request.seed, "score", index))
             sampled = rng.gauss(mean, max(std * 0.35, 1e-4))
-            texts.append(f"<score>{sampled:.8f}</score>")
+            texts.append(format_score_prediction_response(sampled))
         return texts
 
     def _sample_candidate(self, request: CandidateGenerationRequest, rng: random.Random) -> dict[str, Any]:
@@ -300,6 +290,9 @@ class OpenAICompatibleLlamboBackend:
         timeout_seconds: float = 30.0,
         max_retries: int = 3,
         use_structured_outputs: bool = True,
+        provider_name: str = "openai",
+        include_seed: bool = True,
+        include_store: bool = True,
     ) -> None:
         if not api_key:
             raise ValueError("An explicit OpenAI API key is required for the online LLAMBO backend.")
@@ -312,10 +305,13 @@ class OpenAICompatibleLlamboBackend:
         self.max_retries = max(0, int(max_retries))
         self.use_structured_outputs = bool(use_structured_outputs)
         self._structured_outputs_unavailable = False
+        self.provider_name = provider_name
+        self.include_seed = bool(include_seed)
+        self.include_store = bool(include_store)
 
     @property
     def name(self) -> str:
-        return "openai"
+        return self.provider_name
 
     def generate_candidate_texts(self, request: CandidateGenerationRequest) -> list[str]:
         if self.use_structured_outputs and not self._structured_outputs_unavailable:
@@ -325,16 +321,24 @@ class OpenAICompatibleLlamboBackend:
                 temperature=0.8,
                 seed=request.seed,
                 schema_name="llambo_candidate",
-                schema=self._candidate_schema(request.search_space),
+                schema=candidate_response_json_schema(request.search_space, num_candidates=request.n_responses),
             )
             texts: list[str] = []
             for payload in payloads:
                 try:
-                    config = request.search_space.coerce_config(payload, use_defaults=False)
+                    candidates = parse_candidate_response(
+                        json.dumps(payload),
+                        request.search_space,
+                        strict=False,
+                    )
                 except Exception:
                     continue
                 texts.append(
-                    f"<candidate>{_serialize_config(request.search_space, config, parameter_order=request.parameter_order)}</candidate>"
+                    format_candidate_response(
+                        request.search_space,
+                        candidates,
+                        parameter_order=request.parameter_order,
+                    )
                 )
             if texts:
                 return texts
@@ -355,14 +359,7 @@ class OpenAICompatibleLlamboBackend:
                 temperature=0.35,
                 seed=request.seed,
                 schema_name="llambo_score",
-                schema={
-                    "type": "object",
-                    "properties": {
-                        "predicted_objective": {"type": "number"},
-                    },
-                    "required": ["predicted_objective"],
-                    "additionalProperties": False,
-                },
+                schema=score_prediction_json_schema(),
             )
             texts: list[str] = []
             for payload in payloads:
@@ -371,7 +368,7 @@ class OpenAICompatibleLlamboBackend:
                 except (KeyError, TypeError, ValueError):
                     continue
                 if math.isfinite(value):
-                    texts.append(f"<score>{value:.8f}</score>")
+                    texts.append(format_score_prediction_response(value))
             if texts:
                 return texts
         # Fallback: plain text completion and manual parsing.
@@ -404,8 +401,6 @@ class OpenAICompatibleLlamboBackend:
             ],
             "temperature": temperature,
             "n": int(max(1, n)),
-            "seed": int(seed % (2**31 - 1)),
-            "store": False,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
@@ -415,6 +410,10 @@ class OpenAICompatibleLlamboBackend:
                 },
             },
         }
+        if self.include_seed:
+            payload["seed"] = int(seed % (2**31 - 1))
+        if self.include_store:
+            payload["store"] = False
         data, status = self._post_with_retry(payload)
         if status is not None and status // 100 != 2:
             # If the endpoint rejects json_schema (common with compatible APIs),
@@ -461,9 +460,11 @@ class OpenAICompatibleLlamboBackend:
             ],
             "temperature": temperature,
             "n": int(max(1, n)),
-            "seed": int(seed % (2**31 - 1)),
-            "store": False,
         }
+        if self.include_seed:
+            payload["seed"] = int(seed % (2**31 - 1))
+        if self.include_store:
+            payload["store"] = False
         data, _ = self._post_with_retry(payload)
         choices = data.get("choices", [])
         texts: list[str] = []
@@ -528,37 +529,6 @@ class OpenAICompatibleLlamboBackend:
             raise RuntimeError(f"LLAMBO OpenAI request failed after {self.max_retries + 1} attempts: {last_exception}") from last_exception
         raise RuntimeError("LLAMBO OpenAI request failed unexpectedly.")
 
-    @staticmethod
-    def _candidate_schema(search_space: SearchSpace) -> dict[str, Any]:
-        properties: dict[str, Any] = {}
-        required: list[str] = []
-        for param in search_space:
-            required.append(param.name)
-            if isinstance(param, FloatParam):
-                properties[param.name] = {
-                    "type": "number",
-                    "minimum": float(param.low),
-                    "maximum": float(param.high),
-                }
-                continue
-            if isinstance(param, IntParam):
-                properties[param.name] = {
-                    "type": "integer",
-                    "minimum": int(param.low),
-                    "maximum": int(param.high),
-                }
-                continue
-            assert isinstance(param, CategoricalParam)
-            properties[param.name] = {
-                "enum": list(param.choices),
-            }
-        return {
-            "type": "object",
-            "properties": properties,
-            "required": required,
-            "additionalProperties": False,
-        }
-
     def _endpoint(self) -> str:
         base = self.base_url.rstrip("/")
         if base.endswith("/chat/completions"):
@@ -609,6 +579,7 @@ class LlamboAlgorithm(ExternalOptimizerAdapter):
         self._history: list[TrialObservation] = []
         self._seen_configs: set[str] = set()
         self._backend: LlamboBackend | None = None
+        self._fixed_initialization: FixedInitializationProtocol | None = None
 
     @property
     def name(self) -> str:
@@ -619,6 +590,7 @@ class LlamboAlgorithm(ExternalOptimizerAdapter):
             raise ValueError("LlamboAlgorithm currently supports exactly one objective.")
         self.bind_task_spec(task_spec)
         self._seed = int(seed)
+        self._fixed_initialization = resolve_fixed_initialization(task_spec, seed=self._seed)
         description = kwargs.get("task_description")
         if isinstance(description, TaskDescriptionBundle):
             self._description = description
@@ -630,7 +602,22 @@ class LlamboAlgorithm(ExternalOptimizerAdapter):
 
     def ask(self) -> TrialSuggestion:
         search_space = self.require_search_space()
-        if len(self._history) < min(self.n_initial_samples, self.require_task_spec().max_evaluations):
+        if self._fixed_initialization is not None and len(self._history) < min(
+            len(self._fixed_initialization.configurations),
+            self.require_task_spec().max_evaluations,
+        ):
+            suggestion = self._fixed_initialization.suggestion(len(self._history), algorithm=self.name)
+            suggestion.metadata.update(
+                {
+                    "llambo_phase": "benchmark_initialization",
+                    "llambo_backend": self._require_backend().name,
+                    "llambo_history_size": len(self._history),
+                }
+            )
+            return suggestion
+        if self._fixed_initialization is None and len(self._history) < min(
+            self.n_initial_samples, self.require_task_spec().max_evaluations
+        ):
             config = self._sample_initial_config(index=len(self._history))
             return TrialSuggestion(
                 config=config,
@@ -722,10 +709,10 @@ class LlamboAlgorithm(ExternalOptimizerAdapter):
     def _build_backend(self) -> LlamboBackend:
         if self.backend == "heuristic":
             return HeuristicLlamboBackend()
-        if self.backend == "openai":
+        if self.backend in {"openai", "kimi"}:
             raise RuntimeError(
                 "The online LLAMBO backend must be injected from the runner/CLI layer via `backend_impl` "
-                "so OpenAI credentials and endpoint settings stay in user-facing configuration."
+                "so provider credentials and endpoint settings stay in user-facing configuration."
             )
         raise ValueError(f"Unknown LLAMBO backend `{self.backend}`.")
 
@@ -886,38 +873,20 @@ class LlamboAlgorithm(ExternalOptimizerAdapter):
         return float(np.mean(scores))
 
     def _parse_candidate_text(self, text: str) -> list[dict[str, Any]]:
-        search_space = self.require_search_space()
-        blocks = re.findall(r"<candidate>\s*(.*?)\s*</candidate>", text, flags=re.IGNORECASE | re.DOTALL)
-        if not blocks:
-            blocks = re.findall(r"\{.*?\}", text, flags=re.DOTALL)
-        parsed_candidates: list[dict[str, Any]] = []
-        for block in blocks:
-            parsed = self._parse_mapping(block)
-            if parsed is None:
-                continue
-            try:
-                candidate = search_space.coerce_config(parsed, use_defaults=False)
-            except Exception:
-                continue
-            parsed_candidates.append(candidate)
-        return parsed_candidates
-
-    @staticmethod
-    def _parse_mapping(text: str) -> dict[str, Any] | None:
-        cleaned = text.strip()
-        for loader in (json.loads, ast.literal_eval):
-            try:
-                value = loader(cleaned)
-            except Exception:
-                continue
-            if isinstance(value, dict):
-                return dict(value)
-        return None
+        try:
+            return parse_candidate_response(text, self.require_search_space(), strict=False)
+        except Exception:
+            return []
 
     @staticmethod
     def _parse_score_texts(texts: Sequence[str]) -> list[float]:
         scores: list[float] = []
         for text in texts:
+            try:
+                scores.append(parse_score_prediction_response(text, strict=False))
+                continue
+            except Exception:
+                pass
             matches = re.findall(r"<score>\s*([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\s*</score>", text)
             if not matches:
                 matches = re.findall(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?", text)
@@ -937,84 +906,6 @@ class LlamboAlgorithm(ExternalOptimizerAdapter):
         rng.shuffle(shuffled)
         return shuffled
 
-    def _history_examples(
-        self,
-        observed_points: Sequence[ObservedPoint],
-        *,
-        template_index: int,
-    ) -> list[ObservedPoint]:
-        ordered = sorted(
-            observed_points,
-            key=lambda point: _score_to_minimization(self._primary_direction, point.score),
-        )
-        best = ordered[: max(1, min(len(ordered), self.max_prompt_history // 2 or 1))]
-        recent = list(observed_points)[-max(1, self.max_prompt_history - len(best)) :]
-        combined: list[ObservedPoint] = []
-        seen: set[tuple[int | None, float]] = set()
-        for point in [*best, *recent]:
-            key = (point.trial_id, point.score)
-            if key in seen:
-                continue
-            seen.add(key)
-            combined.append(point)
-        if template_index % 3 == 1:
-            combined = list(reversed(combined))
-        elif template_index % 3 == 2:
-            rng = random.Random(_stable_seed(self._seed, "history_examples", template_index))
-            rng.shuffle(combined)
-        return combined[: self.max_prompt_history]
-
-    def _task_context_block(self) -> str:
-        sections = []
-        for kind in ("background", "goal", "constraints", "prior_knowledge"):
-            content = self._description.section_map.get(kind)
-            if not content:
-                continue
-            title = kind.replace("_", " ").title()
-            sections.append(f"- {title}: {_truncate_text(content, 320)}")
-        if sections:
-            return "\n".join(sections)
-        return "- No external task-description bundle was supplied."
-
-    def _search_space_block(self, *, parameter_order: Sequence[str]) -> str:
-        space = self.require_search_space()
-        lines: list[str] = []
-        for name in parameter_order:
-            param = space[name]
-            if isinstance(param, FloatParam):
-                line = f"- {name}: float in [{param.low:g}, {param.high:g}]"
-                if param.log:
-                    line += " on a log scale"
-                line += f", default {param.effective_default():g}"
-                lines.append(line)
-                continue
-            if isinstance(param, IntParam):
-                line = f"- {name}: int in [{param.low}, {param.high}]"
-                if param.log:
-                    line += " on a log scale"
-                line += f", default {param.effective_default()}"
-                lines.append(line)
-                continue
-            assert isinstance(param, CategoricalParam)
-            choices = ", ".join(repr(choice) for choice in param.choices)
-            lines.append(f"- {name}: categorical, choices [{choices}], default {param.effective_default()!r}")
-        return "\n".join(lines)
-
-    def _observed_trials_block(
-        self,
-        observed_points: Sequence[ObservedPoint],
-        *,
-        parameter_order: Sequence[str],
-        template_index: int,
-    ) -> str:
-        examples = self._history_examples(observed_points, template_index=template_index)
-        lines = []
-        for point in examples:
-            config_text = _serialize_config(self.require_search_space(), point.config, parameter_order=parameter_order)
-            trial_label = f"trial {point.trial_id}" if point.trial_id is not None else "trial"
-            lines.append(f"- {trial_label}: score={point.score:.8f}, config={config_text}")
-        return "\n".join(lines)
-
     def _candidate_prompt(
         self,
         observed_points: Sequence[ObservedPoint],
@@ -1024,27 +915,19 @@ class LlamboAlgorithm(ExternalOptimizerAdapter):
         template_index: int,
         requested_candidates: int,
     ) -> str:
-        direction_text = "minimize" if self._primary_direction == ObjectiveDirection.MINIMIZE else "maximize"
-        assert self._primary_name is not None
-        return textwrap.dedent(
-            f"""
-            You are helping with black-box optimization for task `{self.require_task_spec().name}`.
-            Objective: {direction_text} `{self._primary_name}`.
-
-            Search space:
-            {self._search_space_block(parameter_order=parameter_order)}
-
-            Task context:
-            {self._task_context_block()}
-
-            Observed trials:
-            {self._observed_trials_block(observed_points, parameter_order=parameter_order, template_index=template_index)}
-
-            Recommend {requested_candidates} promising new configurations whose objective value could approach {desired_score:.8f}.
-            Return each configuration as compact JSON wrapped in <candidate>...</candidate>.
-            Do not repeat observed configurations. Do not add any prose.
-            """
-        ).strip()
+        _ = (observed_points, desired_score, template_index)
+        contract = default_candidate_generation_contract(
+            max_history_trials=self.max_prompt_history,
+            parameter_order=parameter_order,
+            max_chars_per_section=1200,
+        )
+        context = build_prompt_context(
+            task_spec=self.require_task_spec(),
+            description=self._description,
+            history=self._history,
+            contract=contract,
+        )
+        return compile_candidate_generation_prompt(context, num_candidates=requested_candidates)
 
     def _score_prompt(
         self,
@@ -1054,29 +937,20 @@ class LlamboAlgorithm(ExternalOptimizerAdapter):
         parameter_order: Sequence[str],
         template_index: int,
     ) -> str:
-        direction_text = "lower is better" if self._primary_direction == ObjectiveDirection.MINIMIZE else "higher is better"
-        assert self._primary_name is not None
-        candidate_text = _serialize_config(self.require_search_space(), candidate_config, parameter_order=parameter_order)
-        return textwrap.dedent(
-            f"""
-            You are acting as a surrogate model for task `{self.require_task_spec().name}`.
-            Predict objective `{self._primary_name}` where {direction_text}.
-
-            Search space:
-            {self._search_space_block(parameter_order=parameter_order)}
-
-            Task context:
-            {self._task_context_block()}
-
-            Observed trials:
-            {self._observed_trials_block(observed_points, parameter_order=parameter_order, template_index=template_index)}
-
-            Candidate configuration:
-            {candidate_text}
-
-            Return only the predicted objective value wrapped in <score>...</score>.
-            """
-        ).strip()
+        _ = (observed_points, template_index)
+        contract = default_score_prediction_contract(
+            max_history_trials=self.max_prompt_history,
+            parameter_order=parameter_order,
+            max_chars_per_section=1200,
+        )
+        context = build_prompt_context(
+            task_spec=self.require_task_spec(),
+            description=self._description,
+            history=self._history,
+            contract=contract,
+            candidate_config=candidate_config,
+        )
+        return compile_score_prediction_prompt(context)
 
 
 __all__ = [

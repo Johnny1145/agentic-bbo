@@ -25,6 +25,7 @@ class BBOToolContext:
     web_search_provider: object | None = None
     source_logger: object | None = None
     seed: int = 0
+    optimizer_backend_allowlist: tuple[str, ...] = ()
 
 
 __all__ = ["BBOToolContext"]

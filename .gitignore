@@ -23,13 +23,22 @@ dist/
 # Local outputs
 artifacts/
 runs/
+workflow/
 
 # Editor and OS files
 .DS_Store
+._*
 .idea/
 .vscode/
 
 runs/
 third_party/
 
+# Local credentials
 .apikey
+.env
+.env.*
+!.env.example
+
+# Downloaded DBTune surrogate models
+bbo/tasks/dbtune/assets/*.joblib

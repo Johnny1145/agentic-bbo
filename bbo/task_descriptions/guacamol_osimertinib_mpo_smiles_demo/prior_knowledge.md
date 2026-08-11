@@ -1,5 +1,7 @@
 # Domain Prior Knowledge
 
-No additional task-specific prior is added here.
+This is one of GuacaMol's drug-related multi-property objective benchmarks. GuacaMol describes these tasks as objectives related to known drug molecules that fine-tune structural or physicochemical properties.
 
-Use only the source benchmark, target SMILES or SMARTS, fingerprint type, metric name, and scoring implementation recorded in `bbo/tasks/scientific/guacamol_smiles.py`.
+The benchmark-defined reference molecule is osimertinib. The score is a scalarized combination of similarity, TPSA, and logP terms.
+
+No additional medicinal-chemistry rule is specified by the benchmark.

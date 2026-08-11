@@ -1,11 +1,11 @@
 # Background
 
-BBOPlace-Bench is a benchmark for black-box optimization on chip placement, a stage of VLSI design that strongly affects routing, timing, power, and area.
-The paper frames macro placement as an expensive black-box problem: a candidate placement is evaluated through placement tooling rather than a closed-form objective, and even proxy metrics can be costly on realistic designs.
+This task is a chip macro-placement optimization problem.
 
-The task packaged in this repository wraps the benchmark's mask-guided optimization (MGO) formulation behind a published evaluator service.
-In MGO, the optimizer proposes continuous macro coordinates on a 2D canvas, and the evaluator applies wire-mask-guided decoding to convert that proposal into a legal macro placement while trying to keep the incremental HPWL small.
-This makes the task a structured continuous black-box problem rather than a direct "place every macro exactly here" API.
+In a VLSI chip design, a circuit is represented as a netlist: modules are connected by nets, and each movable macro has a physical size and must be placed on a fixed two-dimensional chip canvas. The placement of macros strongly affects the later placement of standard cells, routing congestion, timing, power, and area.
 
-The full BBOPlace-Bench paper studies multiple formulations, algorithms, and evaluation metrics on industrial suites such as ISPD 2005 and ICCAD 2015.
-The adapter in this repo focuses on the MGO-style macro-placement objective exposed by the evaluator service, which is a practical entry point for comparing generic BBO algorithms on a realistic chip-design workload.
+The optimizer controls a vector x that represents proposed macro coordinates on the chip canvas. In the MGO formulation used by this task, x is not directly treated as the final physical layout. Instead, the evaluator decodes the proposed coordinates into a legal macro placement by moving macros to valid grid locations while trying to minimize incremental wirelength.
+
+The returned objective y is the half-perimeter wirelength, HPWL, of the decoded macro placement. Lower y means a better placement. HPWL is a proxy for downstream chip quality: it approximates routing wirelength, but it is cheaper to evaluate than full global placement or final PPA metrics.
+
+This is a black-box optimization task because the optimizer does not have access to a closed-form, differentiable mapping from proposed coordinates x to placement quality y. The final score is produced by a placement evaluator that applies domain-specific decoding, legality handling, and wirelength computation.

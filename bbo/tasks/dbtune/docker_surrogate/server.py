@@ -62,22 +62,19 @@ TASK_DEFS = {
     ),
     "knob_surrogate_pg_5": (
         "pg_5.joblib",
-        "throughput",
-        True,
+        "latency",
+        False,
         "AGENTIC_BBO_PG5_SURROGATE",
         "knobs_pg_top5.json",
     ),
     "knob_surrogate_pg_20": (
         "pg_20.joblib",
-        "throughput",
-        True,
+        "latency",
+        False,
         "AGENTIC_BBO_PG20_SURROGATE",
         "knobs_pg_top20.json",
     ),
 }
-
-# 占位模型：与 catalog.resolve_bundled_joblib_path 中 sysbench_5 回退一致
-_PLACEHOLDER_SYSBENCH5 = "sysbench_5knob_surrogate.joblib"
 
 ASSETS_DIR = os.environ.get("SURROGATE_ASSETS_DIR", os.path.join(os.path.dirname(__file__), "assets"))
 
@@ -96,10 +93,6 @@ def _resolve_joblib_path(task_id: str, default_name: str, env_var: Optional[str]
     primary = os.path.join(ASSETS_DIR, default_name)
     if os.path.isfile(primary):
         return primary
-    if task_id == "knob_surrogate_sysbench_5":
-        tiny = os.path.join(ASSETS_DIR, _PLACEHOLDER_SYSBENCH5)
-        if os.path.isfile(tiny):
-            return tiny
     return primary
 
 
