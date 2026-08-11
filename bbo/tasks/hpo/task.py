@@ -132,25 +132,17 @@ class BayesmarkHpoTask(Task):
                     cv=CV_SPLITS,
                     error_score="raise",
                 )
-                model.fit(self._data["train_x"], self._data["train_y"])
             if self.dataset_definition.problem_type == "classification":
                 objective_value = float(np.mean(fold_scores))
-                generalization_value = float(model.score(self._data["test_x"], self._data["test_y"]))
                 metrics = {
                     "cv_accuracy_mean": objective_value,
                     "cv_accuracy_std": float(np.std(fold_scores)),
-                    "generalization_accuracy": generalization_value,
                 }
             else:
-                from sklearn.metrics import mean_squared_error
-
                 objective_value = float(-np.mean(fold_scores))
-                predictions = model.predict(self._data["test_x"])
-                generalization_value = float(mean_squared_error(self._data["test_y"], predictions))
                 metrics = {
                     "cv_mse_mean": objective_value,
                     "cv_mse_std": float(np.std(-fold_scores)),
-                    "generalization_mse": generalization_value,
                 }
         except Exception as exc:  # noqa: BLE001 - task failures are serialized for the harness.
             return EvaluationResult(
@@ -169,7 +161,6 @@ class BayesmarkHpoTask(Task):
             {
                 "cv_splits": CV_SPLITS,
                 "train_samples": self.dataset_definition.train_samples,
-                "test_samples": self.dataset_definition.test_samples,
             }
         )
         return EvaluationResult(
@@ -180,6 +171,66 @@ class BayesmarkHpoTask(Task):
             metadata={
                 "dataset": self.dataset_definition.key,
                 "model": self.model_definition.key,
+                "asset_sha256": self._asset_sha256,
+                "bayesmark_source_commit": BAYESMARK_SOURCE_COMMIT,
+                "llambo_source_commit": LLAMBO_SOURCE_COMMIT,
+            },
+        )
+
+    def evaluate_final(self, suggestion: TrialSuggestion) -> EvaluationResult:
+        """Evaluate the frozen CV incumbent once on the hidden test split."""
+
+        start = time.perf_counter()
+        candidate = self.spec.search_space.coerce_config(suggestion.config, use_defaults=False)
+        preload_sklearn_runtime()
+        model = _build_estimator(self.dataset_definition, self.model_definition, candidate)
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=UserWarning)
+                model.fit(self._data["train_x"], self._data["train_y"])
+            if self.dataset_definition.problem_type == "classification":
+                metrics = {
+                    "holdout_accuracy": float(
+                        model.score(self._data["test_x"], self._data["test_y"])
+                    )
+                }
+            else:
+                from sklearn.metrics import mean_squared_error
+
+                predictions = model.predict(self._data["test_x"])
+                metrics = {
+                    "holdout_mse": float(
+                        mean_squared_error(
+                            self._data["test_y"],
+                            predictions,
+                        )
+                    )
+                }
+        except Exception as exc:  # noqa: BLE001 - serialized final-evaluation failure.
+            return EvaluationResult(
+                status=TrialStatus.FAILED,
+                elapsed_seconds=time.perf_counter() - start,
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+                metadata={
+                    "dataset": self.dataset_definition.key,
+                    "model": self.model_definition.key,
+                    "evaluation_split": "test",
+                    "optimizer_feedback": False,
+                    "asset_sha256": self._asset_sha256,
+                },
+            )
+        return EvaluationResult(
+            status=TrialStatus.SUCCESS,
+            metrics=metrics,
+            elapsed_seconds=time.perf_counter() - start,
+            metadata={
+                "dataset": self.dataset_definition.key,
+                "model": self.model_definition.key,
+                "evaluation_split": "test",
+                "optimizer_feedback": False,
+                "train_samples": self.dataset_definition.train_samples,
+                "test_samples": self.dataset_definition.test_samples,
                 "asset_sha256": self._asset_sha256,
                 "bayesmark_source_commit": BAYESMARK_SOURCE_COMMIT,
                 "llambo_source_commit": LLAMBO_SOURCE_COMMIT,

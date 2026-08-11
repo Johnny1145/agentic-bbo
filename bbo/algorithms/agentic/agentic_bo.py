@@ -31,6 +31,7 @@ AGENTIC_BO_COMPONENT = SingleAgentMethod(
         optimizer_backends=("gp_ei",),
         require_optimizer_decision=True,
     ),
+    default_framework="openai_compatible",
     prompt_profile="agentic_bo",
 )
 
@@ -56,7 +57,7 @@ class AgenticBOAlgorithm(GeneralAgentBBOAlgorithm):
     def __init__(
         self,
         *,
-        framework: str = "nanobot",
+        framework: str = "openai_compatible",
         optimizer_backend: str = "gp_ei",
         optimizer_max_calls_per_round: int = 4,
         **kwargs: Any,

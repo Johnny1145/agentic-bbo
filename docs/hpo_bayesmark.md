@@ -13,6 +13,16 @@ Task IDs use:
 hpo_bayesmark_<dataset>_<model>
 ```
 
+## Holdout protocol
+
+Optimization trials use only the training split and return the five-fold CV
+objective and CV diagnostics. They never fit on or score the test split.
+After the optimizer stops, the experimenter freezes the selected incumbent and
+calls `evaluate_final()` exactly once. This result is written under
+`final_evaluation` in `summary.json`; it is not passed to `tell()`, appended to
+`trials.jsonl`, or exposed through agent history. Classification reports
+`holdout_accuracy`; diabetes regression reports `holdout_mse`.
+
 Classification tasks maximize five-fold cross-validation accuracy. Diabetes
 tasks minimize five-fold cross-validation MSE. Each task defaults to the paper
 budget of five initialization evaluations plus 25 optimizer evaluations.

@@ -101,6 +101,8 @@ def test_run_command_passes_nanobot_full_prior_defaults(tmp_path: Path, monkeypa
             "3",
             "--skill-mode",
             "skill",
+            "--agent-tool-mode",
+            "workspace_json",
             "--initial-random",
             "5",
             "--optimizer-budget",
@@ -229,10 +231,12 @@ def test_restricted_workflow_smoke_runs_both_variants_without_prior(tmp_path: Pa
         ]
     )
 
-    assert exit_code == 0
+    assert exit_code == 1
     summary = json.loads((tmp_path / "benchmark_summary.json").read_text(encoding="utf-8"))
-    assert summary["failures"] == []
-    assert [result["benchmark_metadata"]["skill_mode"] for result in summary["results"]] == ["no-skill", "skill"]
+    assert [result["benchmark_metadata"]["skill_mode"] for result in summary["results"]] == ["no-skill"]
+    assert len(summary["failures"]) == 1
+    assert summary["failures"][0]["skill_mode"] == "skill"
+    assert "requires `--agent-tool-mode workspace_json`" in summary["failures"][0]["error_message"]
 
     for result in summary["results"]:
         assert result["task_name"] == "restricted_task_001"

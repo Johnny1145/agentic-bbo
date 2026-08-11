@@ -41,12 +41,21 @@ block。适配器不添加 BBO 工具，也不改变 Claude Code 的原生工具
 为了避免用户环境影响结果，Codex 和 Claude Code 不加载用户已有的
 settings、plugins、MCP servers 或 skills。这与关闭原生工具是两回事。
 
-当前主机不允许 Codex CLI 使用其 Linux `bwrap` 网络沙箱
-（会在 loopback 配置阶段返回 `Operation not permitted`），因此 runner
-对隔离后的 Codex 子进程使用 `danger-full-access`，否则其原生 shell/file
-工具无法执行。Claude Code 在同一主机上也不会强行启用不可用的
-`bwrap`/`socat` sandbox。这里的配置隔离用于保证实验可复现，不应被当成
-安全边界；正式矩阵建议在专用容器、虚拟机或受限系统用户下运行。
+正式 Native run 现在强制 evaluator-sealed 黑盒边界，并采用 fail-closed
+策略：Codex 与 Nanobot 只在 `bwrap` 创建的最小文件系统视图中启动，视图
+只挂载 agent workspace、独立 state、系统运行库和 harness 可执行文件，
+不会挂载仓库、task 实现或 evaluator 数据；继承环境也改为 allowlist，
+避免把宿主凭据交给 agent。当前 Claude Agent SDK 是宿主进程内 transport，
+还不能证明 file tools 看不到仓库；因此即使配置了 `permission_mode=default`、
+强制 sandbox 和 `allowUnsandboxedCommands=false`，正式 Claude Code run
+仍会 fail closed，直到改为独立 mount namespace runner。隔离失败使用专用
+错误码并禁止随机 fallback。
+
+强边界目前只支持 `no_tool` Native runs。`workspace_json` bridge 依赖宿主
+Python/仓库路径，因此 Native engine 会在 agent 启动前拒绝该组合；需要
+工具实验时使用 host-mediated `function_calling` engine。Native harness 的
+CLI 默认也已改为 `no_tool`。本机若不能创建 bubblewrap namespace，smoke
+与正式矩阵都会明确失败，不会生成可被误认为有效的 Agent 结果。
 
 ## 安装
 

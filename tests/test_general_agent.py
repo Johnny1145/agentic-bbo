@@ -193,7 +193,7 @@ def test_general_agent_algorithms_are_registered_and_cli_visible() -> None:
     assert set(web_search_action.choices) == {"disabled", "mock", "serpapi"}
     assert parser.parse_args(["--agent-web-search-provider", "serpapi"]).agent_web_search_provider == "serpapi"
     assert parser.parse_args(["--algorithm", "nanobot", "--agent-require-visible-cot"]).agent_require_visible_cot is True
-    assert parser.parse_args(["--algorithm", "nanobot"]).agent_tool_mode == "workspace_json"
+    assert parser.parse_args(["--algorithm", "nanobot"]).agent_tool_mode == "no_tool"
     assert (
         parser.parse_args(["--algorithm", "nanobot", "--agent-tool-mode", "function_calling"]).agent_tool_mode
         == "function_calling"

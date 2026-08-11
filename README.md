@@ -200,6 +200,7 @@ Task-owned protocol metadata defines comparable initialization and candidate bud
 
 - COCO/BBOB uses 24 official 10D functions, instances selected deterministically from seeds, a shared 20-point scrambled-Sobol initialization, and 100 optimizer evaluations.
 - Bayesmark HPO uses five shared LLAMBO initialization points followed by 25 optimizer evaluations.
+- HPO trials expose CV-only feedback; the frozen incumbent is scored once on the holdout and stored only in `summary.json`.
 
 See `docs/hpo_bayesmark.md` and `docs/baseline_execution_logic.md` for protocol details.
 

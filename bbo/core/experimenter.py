@@ -42,6 +42,7 @@ class RunSummary:
     stop_reason: str
     description_fingerprint: str | None
     logger_summary: dict[str, Any] = field(default_factory=dict)
+    final_evaluation: TrialObservation | None = None
 
 
 class Experimenter:
@@ -140,6 +141,8 @@ class Experimenter:
             n_completed += 1
 
         logger_summary = self.logger.summary()
+        incumbents = self.algorithm.incumbents()
+        final_evaluation = self._evaluate_final_incumbent(incumbents, description)
         return RunSummary(
             task_name=task_spec.name,
             algorithm_name=self.algorithm.name,
@@ -147,10 +150,48 @@ class Experimenter:
             n_completed=n_completed,
             total_eval_time=total_eval_time,
             best_primary_objective=logger_summary.get("best_primary_objective"),
-            incumbents=self.algorithm.incumbents(),
+            incumbents=incumbents,
             stop_reason=stop_reason,
             description_fingerprint=description.fingerprint or None,
             logger_summary=logger_summary,
+            final_evaluation=final_evaluation,
+        )
+
+
+    def _evaluate_final_incumbent(
+        self,
+        incumbents: list[Incumbent],
+        description: TaskDescriptionBundle,
+    ) -> TrialObservation | None:
+        if not incumbents:
+            return None
+        incumbent = incumbents[0]
+        suggestion = TrialSuggestion(
+            config=dict(incumbent.config),
+            trial_id=incumbent.trial_id,
+            metadata={
+                "phase": "final_evaluation",
+                "optimizer_feedback": False,
+            },
+        )
+        try:
+            result = self.task.evaluate_final(suggestion)
+            if result is None:
+                return None
+        except Exception as exc:
+            result = EvaluationResult(
+                status=TrialStatus.FAILED,
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+            )
+        return TrialObservation.from_evaluation(
+            suggestion,
+            result,
+            metadata={
+                **self._runtime_metadata(description),
+                "phase": "final_evaluation",
+                "optimizer_feedback": False,
+            },
         )
 
     def _normalize_suggestion(self, suggestion: TrialSuggestion, next_trial_id: int) -> TrialSuggestion:

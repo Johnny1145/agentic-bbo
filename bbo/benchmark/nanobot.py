@@ -105,7 +105,7 @@ class HarnessAgentOptions:
     api_key_env: str | None = None
     executable: str | None = None
     initial_random: int = 0
-    tool_mode: str = "workspace_json"
+    tool_mode: str = "no_tool"
     prompt_style: str = "workspace"
     prompt_profile: str | None = None
     max_tool_calls: int = 16
@@ -485,6 +485,11 @@ def run_task_object_case(
             for incumbent in summary.incumbents
         ],
         "logger_summary": summary.logger_summary,
+        "final_evaluation": (
+            None
+            if summary.final_evaluation is None
+            else summary.final_evaluation.to_dict()
+        ),
         "run_dir": str(run_dir),
         "results_jsonl": str(run_dir / "trials.jsonl"),
         "trial_count": len(records),
@@ -766,7 +771,7 @@ def _add_common_run_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--agent-api-base", default=None)
     parser.add_argument("--agent-api-key-env", default=None)
     parser.add_argument("--agent-executable", default=None)
-    parser.add_argument("--agent-tool-mode", choices=AGENT_TOOL_MODE_CLI_CHOICES, default="workspace_json")
+    parser.add_argument("--agent-tool-mode", choices=AGENT_TOOL_MODE_CLI_CHOICES, default="no_tool")
     parser.add_argument("--agent-prompt-style", choices=["workspace"], default="workspace")
     parser.add_argument("--agent-prompt-profile", default=None)
     parser.add_argument("--agent-max-tool-calls", type=int, default=16)

@@ -294,6 +294,15 @@ class GeneralAgentBBOAlgorithm(Algorithm):
             optimizer_max_calls_per_round=int(optimizer_max_calls_per_round),
         )
         self._engine = engine or create_general_agent_engine(normalized)
+        if (
+            normalized in {"nanobot", "codex", "claude_code"}
+            and self._engine.name == normalized
+            and normalized_tool_mode != "no_tool"
+        ):
+            raise ValueError(
+                "Strict native black-box runs require `tool_mode='no_tool'`; "
+                "workspace bridges expose optimizer-side runtime paths."
+            )
         self._task_spec: TaskSpec | None = None
         self._description = TaskDescriptionBundle.empty(task_id="unknown")
         self._search_space: SearchSpace | None = None
@@ -365,7 +374,11 @@ class GeneralAgentBBOAlgorithm(Algorithm):
             project_root=self._workspace_dir,
             workspace_root=self._workspace_dir,
             extra={
-                "nanobot_config": {"env": self._agent_env()},
+                "nanobot_config": {
+                    "env": self._agent_env(),
+                    "black_box_required": True,
+                    "tool_mode": self.config.tool_mode,
+                },
                 "codex_config": self._codex_config(),
                 "claude_config": self._claude_config(),
                 "openai_compatible_config": self._openai_compatible_config(),
@@ -539,6 +552,7 @@ class GeneralAgentBBOAlgorithm(Algorithm):
         last_error: str | None = None
         reasoning_requirement_failed = False
         round_call_ids: list[str] = []
+        boundary_failed = False
         for attempt_index in range(self.config.max_retries + 1):
             self._write_workspace_context()
             call_id = f"agent_call_{self._call_index:05d}"
@@ -571,6 +585,8 @@ class GeneralAgentBBOAlgorithm(Algorithm):
             }
             if result.status != "success":
                 append_jsonl(self._agent_calls_path, call_record)
+                if result.returncode == -3:
+                    boundary_failed = True
                 last_error = result.error or result.answer or result.status
                 continue
             reasoning_metadata = self._reasoning_metadata_for_call(call_id)
@@ -653,6 +669,9 @@ class GeneralAgentBBOAlgorithm(Algorithm):
             if accepted > 0:
                 return
             last_error = "Agent returned only duplicate candidate configurations."
+
+        if boundary_failed:
+            raise RuntimeError(f"{self.name} refused to run without its black-box boundary: {last_error}")
 
         if reasoning_requirement_failed:
             raise RuntimeError(f"{self.name} failed the visible CoT requirement: {last_error}")
@@ -2487,7 +2506,7 @@ class GeneralAgentBBOAlgorithm(Algorithm):
             cfg: dict[str, Any] = {
                 "agents": {
                     "defaults": {
-                        "workspace": str(self._workspace_dir),
+                        "workspace": "/workspace",
                         "provider": provider_key if provider else "auto",
                         "disabled_skills": [] if self._agent_skills_enabled() else list(NANOBOT_BUILTIN_SKILL_NAMES),
                     }
@@ -2598,8 +2617,11 @@ class GeneralAgentBBOAlgorithm(Algorithm):
         return {
             "env": self._agent_env(),
             "executable": self.config.executable,
-            "sandbox": "danger-full-access",
+            "sandbox": "workspace-write",
             "approval_policy": "never",
+            "black_box_required": True,
+            "filesystem_boundary": "outer_bwrap_minimal_root",
+            "tool_mode": self.config.tool_mode,
             "model": self.config.model,
             "api_base": self.config.api_base,
             "api_key_env": self.config.api_key_env,
@@ -2655,7 +2677,14 @@ class GeneralAgentBBOAlgorithm(Algorithm):
             "max_output_tokens": 4096 if provider == "sglang" else None,
             "tools": {"type": "preset", "preset": "claude_code"},
             "system_prompt": {"type": "preset", "preset": "claude_code"},
-            "permission_mode": "bypassPermissions",
+            "permission_mode": "default",
+            "black_box_required": True,
+            "tool_mode": self.config.tool_mode,
+            "sandbox": {
+                "enabled": True,
+                "autoAllowBashIfSandboxed": True,
+                "allowUnsandboxedCommands": False,
+            },
             "setting_sources": [],
             "skills": [],
         }
@@ -2663,6 +2692,10 @@ class GeneralAgentBBOAlgorithm(Algorithm):
     def _native_harness_policy(self) -> dict[str, Any]:
         return {
             "framework": self.config.framework,
+            "black_box_boundary": "required",
+            "filesystem_isolation": "minimal_root_or_framework_sandbox",
+            "evaluator_access": "denied",
+            "missing_isolation_behavior": "fail_closed",
             "native_tools_preserved": True,
             "native_tool_policy": "framework_default",
             "benchmark_tools_enabled": self._agent_tools_enabled(),

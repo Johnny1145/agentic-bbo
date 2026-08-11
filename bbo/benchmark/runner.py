@@ -56,6 +56,11 @@ def run_benchmark(
         "results_jsonl": str(results_path),
         "summary_json": str(run_dir / "summary.json"),
         "trial_count": len(logger.load_records()),
+        "final_evaluation": (
+            None
+            if summary.final_evaluation is None
+            else summary.final_evaluation.to_dict()
+        ),
         "incumbents": [
             {
                 "config": item.config,

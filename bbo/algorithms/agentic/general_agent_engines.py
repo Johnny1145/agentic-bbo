@@ -8,6 +8,7 @@ import os
 import random
 import shutil
 import signal
+import subprocess
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -39,6 +40,180 @@ class AgentWorkCopy:
     project_root: Path
     workspace_root: Path | None = None
     extra: dict[str, Any] = field(default_factory=dict)
+
+
+def _native_black_box_error(config: dict[str, Any], *, framework: str) -> str | None:
+    """Return a fail-closed diagnostic when strong native isolation is unavailable."""
+
+    if not config.get("black_box_required"):
+        return None
+    if str(config.get("tool_mode") or "no_tool") != "no_tool":
+        return (
+            "Strict native black-box mode currently supports only `no_tool`; "
+            "workspace bridge tools expose optimizer-side runtime paths. Use a host-side "
+            "function-calling engine for tool experiments."
+        )
+    if framework == "Claude Code":
+        return (
+            "Strict Claude Code black-box mode is unavailable with the current in-process "
+            "Agent SDK transport; refusing to expose the host filesystem. Use a sealed "
+            "out-of-process Claude runner before collecting formal results."
+        )
+    if not sys.platform.startswith("linux"):
+        return (
+            f"Strict {framework} black-box mode requires the Linux bubblewrap launcher "
+            "in this runtime."
+        )
+    bwrap = shutil.which("bwrap")
+    if not bwrap:
+        return (
+            f"Strict {framework} black-box mode requires `bwrap`; refusing to launch "
+            "an agent that could read the evaluator or repository."
+        )
+    probe_error = _probe_bubblewrap(bwrap)
+    if probe_error:
+        return (
+            f"Strict {framework} black-box mode could not create its bubblewrap "
+            f"namespace; refusing to launch the agent. {probe_error}"
+        )
+    return None
+
+
+def _probe_bubblewrap(executable: str) -> str | None:
+    """Verify that bubblewrap can create the namespace used by native agents."""
+
+    try:
+        completed = subprocess.run(
+            [
+                executable,
+                "--die-with-parent",
+                "--new-session",
+                "--unshare-all",
+                "--share-net",
+                "--ro-bind",
+                "/usr",
+                "/usr",
+                "--proc",
+                "/proc",
+                "--dev",
+                "/dev",
+                "--",
+                "/usr/bin/true",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            env={"LANG": "C", "PATH": "/usr/bin:/bin"},
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"Isolation probe failed: {type(exc).__name__}: {exc}"
+    if completed.returncode == 0:
+        return None
+    detail = (completed.stderr or completed.stdout or "unknown bubblewrap failure").strip()
+    return f"Isolation probe exited {completed.returncode}: {detail[-300:]}"
+
+
+def _strict_native_env(
+    configured: dict[str, str],
+    extra_env: dict[str, str] | None,
+) -> dict[str, str]:
+    """Build an allowlisted environment without leaking host credentials."""
+
+    env = {
+        "HOME": "/workspace",
+        "LANG": os.environ.get("LANG", "C.UTF-8"),
+        "LC_ALL": os.environ.get("LC_ALL", "C.UTF-8"),
+        "NO_COLOR": "1",
+        "PATH": "/runtime/bin:/usr/local/bin:/usr/bin:/bin",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "SSL_CERT_DIR": "/etc/ssl/certs",
+        "TMPDIR": "/tmp",
+    }
+    env.update({str(key): str(value) for key, value in configured.items()})
+    env.update({str(key): str(value) for key, value in (extra_env or {}).items()})
+    return env
+
+
+def _sealed_bwrap_command(
+    command: list[str],
+    *,
+    workspace: Path,
+    state_dir: Path,
+    read_only_mounts: list[tuple[Path, str]] | None = None,
+    writable_mounts: list[tuple[Path, str]] | None = None,
+) -> list[str]:
+    """Wrap a command in a minimal mount namespace that omits the repository."""
+
+    bwrap = shutil.which("bwrap")
+    if not bwrap:
+        raise RuntimeError("bubblewrap is unavailable")
+    wrapped = [
+        bwrap,
+        "--die-with-parent",
+        "--new-session",
+        "--unshare-all",
+        "--share-net",
+    ]
+    for root in ("/usr", "/bin", "/lib", "/lib64", "/etc"):
+        path = Path(root)
+        if path.exists():
+            wrapped.extend(["--ro-bind", root, root])
+    wrapped.extend(
+        [
+            "--proc",
+            "/proc",
+            "--dev",
+            "/dev",
+            "--tmpfs",
+            "/tmp",
+            "--dir",
+            "/workspace",
+            "--bind",
+            str(workspace.resolve()),
+            "/workspace",
+            "--dir",
+            "/state",
+            "--bind",
+            str(state_dir.resolve()),
+            "/state",
+            "--dir",
+            "/opt",
+        ]
+    )
+    for source, destination in read_only_mounts or []:
+        wrapped.extend(["--ro-bind", str(source.resolve()), destination])
+    for source, destination in writable_mounts or []:
+        wrapped.extend(["--dir", destination, "--bind", str(source.resolve()), destination])
+    wrapped.extend(["--chdir", "/workspace", "--"])
+    return [*wrapped, *command]
+
+
+def _sealed_executable(
+    executable: str,
+) -> tuple[list[str], list[tuple[Path, str]]]:
+    """Map one native launcher into the sealed filesystem."""
+
+    resolved = Path(executable).resolve()
+    if resolved.suffix == ".js":
+        package_root = resolved.parent.parent
+        relative = resolved.relative_to(package_root)
+        return (
+            ["/usr/bin/env", "node", f"/opt/native-agent/{relative.as_posix()}"],
+            [(package_root, "/opt/native-agent")],
+        )
+    return ["/opt/native-agent"], [(resolved, "/opt/native-agent")]
+
+
+def _sealed_python() -> tuple[str, list[tuple[Path, str]]]:
+    """Map the active Python environment without mounting the source checkout."""
+
+    prefix = Path(sys.prefix).resolve()
+    executable = Path(sys.executable).resolve()
+    if prefix == Path("/usr") or prefix == Path("/usr/local"):
+        return str(executable), []
+    candidate = Path("/runtime/bin") / Path(sys.executable).name
+    return str(candidate), [(prefix, "/runtime")]
 
 
 class GeneralAgentEngine(ABC):
@@ -95,27 +270,58 @@ class NanobotEngine(GeneralAgentEngine):
                 returncode=-2,
             )
         cfg = work_copy.extra.get("nanobot_config", {})
+        boundary_error = _native_black_box_error(cfg, framework="Nanobot")
+        if boundary_error:
+            return AgentResult(status="failed", answer="", error=boundary_error, returncode=-3)
+        strict_boundary = bool(cfg.get("black_box_required"))
         workspace_path = _resolve_workspace(work_copy, agent_id or "")
         call_session_id = session_id or (extra_env or {}).get("BBO_AGENT_CALL_ID", "")
-        cmd = [sys.executable, "-m", "bbo.algorithms.agentic.nanobot_runner", "agent", "-m", message, "--no-markdown"]
+
+        read_only_mounts: list[tuple[Path, str]] = []
+        writable_mounts: list[tuple[Path, str]] = []
+        if strict_boundary:
+            runner_path = work_copy.state_dir / "sealed_nanobot_runner.py"
+            runner_path.write_text(
+                Path(__file__).with_name("nanobot_runner.py").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            python_executable, runtime_mounts = _sealed_python()
+            read_only_mounts.extend(runtime_mounts)
+            cmd = [python_executable, "/state/sealed_nanobot_runner.py", "agent", "-m", message, "--no-markdown"]
+        else:
+            cmd = [sys.executable, "-m", "bbo.algorithms.agentic.nanobot_runner", "agent", "-m", message, "--no-markdown"]
         if call_session_id:
             cmd.extend(["-s", call_session_id])
         if workspace_path:
-            cmd.extend(["-w", str(workspace_path)])
+            cmd.extend(["-w", "/workspace" if strict_boundary else str(workspace_path)])
         if work_copy.config_path:
-            cmd.extend(["-c", str(work_copy.config_path)])
+            config_arg = f"/state/{work_copy.config_path.name}" if strict_boundary else str(work_copy.config_path)
+            cmd.extend(["-c", config_arg])
 
-        env = {
-            **os.environ,
-            **(cfg.get("env") or {}),
-            **(extra_env or {}),
-            "BBO_NANOBOT_NO_MAX_TOKENS": "1",
-        }
+        if strict_boundary:
+            env = _strict_native_env(dict(cfg.get("env") or {}), extra_env)
+        else:
+            env = {**os.environ, **(cfg.get("env") or {}), **(extra_env or {})}
+        env["BBO_NANOBOT_NO_MAX_TOKENS"] = "1"
         env.setdefault("BBO_NANOBOT_PARSE_TEXT_TOOL_CALLS", "1")
         if max_tool_calls > 0:
             env["BBO_WORKSPACE_MAX_TOOL_CALLS"] = str(max_tool_calls)
-        if log_dir := work_copy.extra.get("log_dir"):
-            env["BBO_NANOBOT_LOG_DIR"] = str(log_dir)
+        log_dir = work_copy.extra.get("log_dir")
+        if log_dir:
+            if strict_boundary:
+                writable_mounts.append((Path(log_dir), "/logs"))
+                env["BBO_NANOBOT_LOG_DIR"] = "/logs"
+            else:
+                env["BBO_NANOBOT_LOG_DIR"] = str(log_dir)
+        if strict_boundary:
+            assert workspace_path is not None
+            cmd = _sealed_bwrap_command(
+                cmd,
+                workspace=workspace_path,
+                state_dir=work_copy.state_dir,
+                read_only_mounts=read_only_mounts,
+                writable_mounts=writable_mounts,
+            )
 
         tool_calls_path = _workspace_tool_calls_path(workspace_path)
         tool_calls_baseline = _count_nonempty_lines(tool_calls_path) if max_tool_calls > 0 else 0
@@ -198,6 +404,11 @@ class CodexEngine(GeneralAgentEngine):
             )
 
         cfg = work_copy.extra.get("codex_config", {})
+        boundary_error = _native_black_box_error(cfg, framework="Codex")
+        if boundary_error:
+            return AgentResult(status="failed", answer="", error=boundary_error, returncode=-3)
+        strict_boundary = bool(cfg.get("black_box_required"))
+
         executable = str(cfg.get("executable") or os.environ.get("BBO_CODEX_BIN") or "codex")
         resolved_executable = executable if Path(executable).is_file() else shutil.which(executable)
         if not resolved_executable:
@@ -212,11 +423,15 @@ class CodexEngine(GeneralAgentEngine):
             )
 
         workspace_path = _resolve_workspace(work_copy, agent_id or "") or work_copy.project_root
+        if strict_boundary:
+            launcher, read_only_mounts = _sealed_executable(str(resolved_executable))
+        else:
+            launcher, read_only_mounts = [str(resolved_executable)], []
         cmd = [
-            str(resolved_executable),
+            *launcher,
             "--strict-config",
             "-C",
-            str(workspace_path),
+            "/workspace" if strict_boundary else str(workspace_path),
             "-s",
             str(cfg.get("sandbox") or "workspace-write"),
             "-a",
@@ -255,14 +470,24 @@ class CodexEngine(GeneralAgentEngine):
             message,
             ]
         )
-        env = {
-            **os.environ,
-            **(cfg.get("env") or {}),
-            **(extra_env or {}),
-            "CODEX_HOME": str(work_copy.state_dir),
-            "NO_COLOR": "1",
-            "PYTHONDONTWRITEBYTECODE": "1",
-        }
+        if strict_boundary:
+            cmd = _sealed_bwrap_command(
+                cmd,
+                workspace=workspace_path,
+                state_dir=work_copy.state_dir,
+                read_only_mounts=read_only_mounts,
+            )
+            env = _strict_native_env(dict(cfg.get("env") or {}), extra_env)
+            env["CODEX_HOME"] = "/state"
+        else:
+            env = {
+                **os.environ,
+                **(cfg.get("env") or {}),
+                **(extra_env or {}),
+                "CODEX_HOME": str(work_copy.state_dir),
+                "NO_COLOR": "1",
+                "PYTHONDONTWRITEBYTECODE": "1",
+            }
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -354,6 +579,11 @@ class ClaudeCodeEngine(GeneralAgentEngine):
                 error="ClaudeCodeEngine does not support injected BBO function-calling tools in this runtime.",
                 returncode=-2,
             )
+        cc = work_copy.extra.get("claude_config", {})
+        boundary_error = _native_black_box_error(cc, framework="Claude Code")
+        if boundary_error:
+            return AgentResult(status="failed", answer="", error=boundary_error, returncode=-3)
+
         try:
             from claude_agent_sdk import (  # type: ignore
                 AssistantMessage,
@@ -376,7 +606,6 @@ class ClaudeCodeEngine(GeneralAgentEngine):
                 raw=exc,
             )
 
-        cc = work_copy.extra.get("claude_config", {})
         workspace_path = _resolve_workspace(work_copy, agent_id or "")
         stderr_lines: list[str] = []
         claude_env = {
@@ -410,7 +639,7 @@ class ClaudeCodeEngine(GeneralAgentEngine):
             env=claude_env,
             tools=cc.get("tools", {"type": "preset", "preset": "claude_code"}),
             system_prompt=cc.get("system_prompt", {"type": "preset", "preset": "claude_code"}),
-            permission_mode=cc.get("permission_mode", "bypassPermissions"),
+            permission_mode=cc.get("permission_mode", "default"),
             allowed_tools=cc.get("allowed_tools", []),
             disallowed_tools=cc.get("disallowed_tools", []),
             model=cc.get("model"),

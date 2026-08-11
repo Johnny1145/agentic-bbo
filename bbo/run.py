@@ -66,7 +66,7 @@ class BBOArgumentParser(argparse.ArgumentParser):
 def _apply_algorithm_aware_agent_defaults(args: argparse.Namespace) -> None:
     if getattr(args, "agent_tool_mode", None) is None:
         args.agent_tool_mode = (
-            "workspace_json"
+            "no_tool"
             if getattr(args, "algorithm", None) in NATIVE_HARNESS_ALGORITHM_NAMES
             else "function_calling"
         )
@@ -376,7 +376,9 @@ def run_single_experiment(
     _require_algorithm_support(task, algorithm_name)
     if agent_tool_mode is None:
         agent_tool_mode = (
-            "workspace_json" if algorithm_name in NATIVE_HARNESS_ALGORITHM_NAMES else "function_calling"
+            "no_tool"
+            if algorithm_name in NATIVE_HARNESS_ALGORITHM_NAMES
+            else "function_calling"
         )
     else:
         agent_tool_mode = normalize_agent_tool_mode(agent_tool_mode)
@@ -605,6 +607,11 @@ def run_single_experiment(
             for incumbent in summary.incumbents
         ],
         "logger_summary": summary.logger_summary,
+        "final_evaluation": (
+            None
+            if getattr(summary, "final_evaluation", None) is None
+            else summary.final_evaluation.to_dict()
+        ),
         "run_dir": str(run_dir),
         "results_jsonl": str(results_jsonl),
         "trial_count": len(records),
@@ -1013,8 +1020,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         choices=AGENT_TOOL_MODE_CLI_CHOICES,
         default=None,
         help=(
-            "Agent tool mode. Default: workspace_json for native Nanobot/Codex/Claude Code harnesses, "
-            "function_calling for other agentic backends."
+            "Agent tool mode. Default: no_tool for sealed native Nanobot/Codex/Claude Code harnesses, "
+            "function_calling for host-mediated agentic backends."
         ),
     )
     parser.add_argument("--agent-prompt-style", choices=["workspace"], default="workspace")

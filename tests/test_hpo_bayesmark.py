@@ -191,7 +191,17 @@ def test_representative_real_hpo_evaluations_are_finite(task_name: str, objectiv
     assert result.success, (result.error_type, result.error_message)
     assert math.isfinite(result.objectives[objective])
     assert result.metrics["cv_splits"] == 5
-    assert result.metrics["train_samples"] > result.metrics["test_samples"]
+    assert result.metrics["train_samples"] > 0
+    assert "test_samples" not in result.metrics
+    assert not any(name.startswith("generalization_") for name in result.metrics)
+
+    final = task.evaluate_final(TrialSuggestion(task.spec.search_space.defaults()))
+    assert final.success, (final.error_type, final.error_message)
+    assert not final.objectives
+    expected_metric = "holdout_accuracy" if objective == "accuracy" else "holdout_mse"
+    assert math.isfinite(final.metrics[expected_metric])
+    assert final.metadata["evaluation_split"] == "test"
+    assert final.metadata["optimizer_feedback"] is False
 
 
 @pytest.mark.integration

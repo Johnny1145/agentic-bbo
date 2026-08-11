@@ -317,15 +317,24 @@ def test_codex_no_tool_workspace_uses_isolated_responses_config(tmp_path: Path) 
     assert manifest["harness_policy"]["native_tools_preserved"] is True
     assert manifest["harness_policy"]["benchmark_tools_enabled"] is False
     assert manifest["harness_policy"]["benchmark_skills_enabled"] is False
+    assert manifest["harness_policy"]["black_box_boundary"] == "required"
+    assert manifest["harness_policy"]["evaluator_access"] == "denied"
+    assert manifest["harness_policy"]["missing_isolation_behavior"] == "fail_closed"
     assert algorithm._work_copy is not None
     assert algorithm._work_copy.extra["codex_config"]["responses_api_compat"] == "sglang"
-    assert algorithm._work_copy.extra["codex_config"]["sandbox"] == "danger-full-access"
+    assert algorithm._work_copy.extra["codex_config"]["sandbox"] == "workspace-write"
+    assert algorithm._work_copy.extra["codex_config"]["black_box_required"] is True
     assert "native file-reading tools" in prompt
     assert "`task.md`" in prompt
     assert "Search space JSON:" not in prompt
     assert not (workspace / "bbo_tool.py").exists()
     assert not (workspace / "bbo_tools.py").exists()
     assert not (workspace / "skills").exists()
+
+
+def test_native_workspace_bridge_is_rejected_before_setup() -> None:
+    with pytest.raises(ValueError, match="workspace bridges expose"):
+        CodexBBOAlgorithm(tool_mode="workspace_json")
 
 
 def test_claude_no_tool_workspace_isolates_settings_and_keeps_native_preset(
@@ -365,11 +374,180 @@ def test_claude_no_tool_workspace_isolates_settings_and_keeps_native_preset(
     assert config["env"]["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] == "1"
     assert config["messages_api_compat"] == "sglang"
     assert config["max_output_tokens"] == 4096
+    assert config["permission_mode"] == "default"
+    assert config["black_box_required"] is True
+    assert config["sandbox"]["allowUnsandboxedCommands"] is False
     assert "native file-reading tools" in prompt
     assert "`history.jsonl`" in prompt
     assert (work_copy.state_dir / "settings.json").read_text(encoding="utf-8") == "{}"
     assert not (workspace / "bbo_tool.py").exists()
     assert not (workspace / "skills").exists()
+
+
+@pytest.mark.parametrize(
+    ("engine_name", "engine"),
+    [
+        ("Codex", CodexEngine()),
+        ("Claude Code", ClaudeCodeEngine()),
+    ],
+)
+def test_native_engines_fail_closed_without_os_isolation(
+    engine_name: str,
+    engine: object,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bbo.algorithms.agentic import general_agent_engines
+
+    original_which = general_agent_engines.shutil.which
+
+    def isolated_which(name: str) -> str | None:
+        if name in {"bwrap", "socat"}:
+            return None
+        return original_which(name)
+
+    monkeypatch.setattr(general_agent_engines.shutil, "which", isolated_which)
+    workspace = tmp_path / "workspace"
+    state = tmp_path / "state"
+    workspace.mkdir()
+    state.mkdir()
+    config_key = "codex_config" if engine_name == "Codex" else "claude_config"
+    result = asyncio.run(
+        engine.run_agent(
+            "",
+            "return JSON",
+            AgentWorkCopy(
+                state_dir=state,
+                config_path=None,
+                project_root=workspace,
+                workspace_root=workspace,
+                extra={
+                    config_key: {
+                        "black_box_required": True,
+                        "tool_mode": "no_tool",
+                    }
+                },
+            ),
+        )
+    )
+
+    assert result.status == "failed"
+    assert result.returncode == -3
+    assert "black-box" in str(result.error)
+    assert "refusing" in str(result.error)
+
+
+def test_native_engine_fails_closed_when_bwrap_namespace_probe_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bbo.algorithms.agentic import general_agent_engines
+
+    monkeypatch.setattr(
+        general_agent_engines.shutil,
+        "which",
+        lambda name: "/usr/bin/bwrap" if name == "bwrap" else None,
+    )
+    monkeypatch.setattr(
+        general_agent_engines.subprocess,
+        "run",
+        lambda *args, **kwargs: types.SimpleNamespace(
+            returncode=1,
+            stdout="",
+            stderr="bwrap: loopback: Operation not permitted",
+        ),
+    )
+    workspace = tmp_path / "workspace"
+    state = tmp_path / "state"
+    workspace.mkdir()
+    state.mkdir()
+
+    result = asyncio.run(
+        CodexEngine().run_agent(
+            "",
+            "return JSON",
+            AgentWorkCopy(
+                state_dir=state,
+                config_path=None,
+                project_root=workspace,
+                workspace_root=workspace,
+                extra={
+                    "codex_config": {
+                        "black_box_required": True,
+                        "tool_mode": "no_tool",
+                    }
+                },
+            ),
+        )
+    )
+
+    assert result.returncode == -3
+    assert "could not create its bubblewrap namespace" in str(result.error)
+
+
+def test_sealed_native_command_omits_repository_and_host_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bbo.algorithms.agentic import general_agent_engines
+
+    workspace = tmp_path / "workspace"
+    state = tmp_path / "state"
+    workspace.mkdir()
+    state.mkdir()
+    monkeypatch.setattr(
+        general_agent_engines.shutil,
+        "which",
+        lambda name: "/usr/bin/bwrap" if name == "bwrap" else None,
+    )
+    monkeypatch.setenv("GITHUB_TOKEN", "must-not-leak")
+
+    command = general_agent_engines._sealed_bwrap_command(
+        ["/usr/bin/true"],
+        workspace=workspace,
+        state_dir=state,
+    )
+    env = general_agent_engines._strict_native_env(
+        {}, {"BBO_AGENT_CALL_ID": "call-1"}
+    )
+
+    bind_index = command.index("--bind")
+    assert ["--bind", str(workspace.resolve()), "/workspace"] == command[
+        bind_index : bind_index + 3
+    ]
+    assert str(Path(__file__).resolve().parents[1]) not in command
+    assert not any(
+        command[index : index + 2] == ["--ro-bind", "/"]
+        for index in range(len(command) - 1)
+    )
+    assert "GITHUB_TOKEN" not in env
+    assert env["BBO_AGENT_CALL_ID"] == "call-1"
+
+
+def test_black_box_boundary_failure_never_falls_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bbo.algorithms.agentic import general_agent_engines
+
+    original_which = general_agent_engines.shutil.which
+    monkeypatch.setattr(
+        general_agent_engines.shutil,
+        "which",
+        lambda name: None if name == "bwrap" else original_which(name),
+    )
+    task = create_task("bbob_f01_d10", max_evaluations=1, seed=1)
+    algorithm = CodexBBOAlgorithm(
+        run_dir=tmp_path / "run",
+        tool_mode="no_tool",
+        max_retries=0,
+        allow_fallback=True,
+    )
+    algorithm.setup(task.spec, seed=1, task_description=task.get_description())
+    algorithm._fixed_initialization = None
+
+    with pytest.raises(
+        RuntimeError, match="refused to run without its black-box boundary"
+    ):
+        algorithm.ask()
 
 
 def test_codex_engine_invokes_isolated_cli_and_parses_native_tool_events(
@@ -625,3 +803,4 @@ def test_default_benchmark_cli_exposes_native_harness_selection() -> None:
     )
     assert args.harness == "codex"
     assert args.agent_executable == "/opt/codex"
+    assert args.agent_tool_mode == "no_tool"
